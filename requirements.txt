@@ -1,0 +1,10 @@
+1. clang (if c)
+2. bpfcc-tools
+   (https://github.com/iovisor/bcc/blob/master/INSTALL.md#ubuntu---binary)
+4. python3
+5. pip3 (python-pip3)
+6. pip3 install bcc
+7. pip3 install pytest
+8. python3-bcc
+9. llvm-3.9
+10. https://github.com/jsommers/eppt/blob/master/cloudlab_setup.sh
