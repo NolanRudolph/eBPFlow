@@ -14,13 +14,10 @@ import netifaces as ni
 # Global Variables #
 
 MAX_BUFFER = 2048
-
-# Header size enum class
-class H_LEN(Enum):
-    IP_ETH = 14
-    VLAN_ETH= 4
-    TCP = 20
-    UDP = 8
+ETH_IP = 14
+ETH_VLAN = 4
+TCP = 20
+UDP = 8
 
 # Main #
 def main(args):
@@ -53,24 +50,40 @@ def main(args):
     # Set as blocking to record all flows
     sock.setblocking(True)
 
-    ni.ifaddresses(args.interface)
-    try:
-        ip = ni.ifaddresses(interface)[ni.AF_INET][0]['addr']
-    except:
-        ip = "127.0.0.1"
     while True:
         # Retrieve packet
         packet = os.read(socket_fd, MAX_BUFFER)
         packet_bytes = bytearray(packet)
 
+        # Initialize packet variables
+        ethertype = ""
+        protocol = 0
+        payload_len = 0
+
         # Ethernet Type - https://en.wikipedia.org/wiki/Ethernet_frame
-        ethertype = packet_bytes[H_LEN.IP_ETH.value - 2]
-        if ethertype == 0x0800:
-            logger.info("Got a normal packet.")
-        elif ethertype == 0x8100:
-            logger.info("Got a VLAN packet.")
+        ethertype_hex = (packet_bytes[ETH_IP - 2] << 8) + packet_bytes[ETH_IP - 1]
+        if ethertype_hex == 0x0800:
+            ethertype = "IPv4"
+            logger.debug("Received an IPv4 packet.")
+        elif ethertype_hex == 0x86DD:
+            ethertype = "IPv6"
+            logger.debug("Received an IPv6 packet.")
         else:
-            logger.info("Got some packet?")
+            ethertype = "VLAN"
+            logger.debug("Received a VLAN packet.")
+
+
+        if ethertype == "IPv4":
+            payload_len = (packet_bytes[ETH_IP + 2] << 8) + packet_bytes[ETH_IP + 3]
+            logger.debug("Payload Length: %s" % str(payload_len))
+        elif ethertype == "IPv6":
+            payload_len = (packet_bytes[ETH_IP + 4] << 8) + packet_bytes[ETH_IP + 5]
+            pass
+            # ip_length = packet_bytes[ETH_IP + 
+            # Do this
+        else:
+            pass
+            # idk
 
 
 # Argparse and Main Call #
