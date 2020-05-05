@@ -14,7 +14,7 @@
 #       i. virtio_net
 
 # Imports #
-from bcc import BPF, USDT
+from bcc import BPF
 from enum import Enum
 import argparse
 import logging
@@ -45,10 +45,12 @@ def main(args):
 
     # Compile and load the required source C file
     logger.debug("Loading xdp_collect.c...")
-    bpf = BPF(src_file="xdp_collect.c", cflags=["-DCTXTYPE=xdp_md"]);
+    bpf = BPF(src_file="xdp_collect.c");
 
     # Get the main function
+    logger.debug("Loading function xdp_parser()...")
     fn = bpf.load_func("xdp_parser", BPF.XDP)
+    logger.debug("Attaching xdp_parser() to kernel hook...")
     bpf.attach_xdp(IF, fn, 0)
 
     # Main flow collecting segment

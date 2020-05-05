@@ -4,7 +4,8 @@
 //         2. Access outside of contextual (ctx) memory
 //         3. Excessive use of eBPF instructions
 
-#define KBUILD_MODNAME "xdp_eBPF"
+#define BPF_LICENSE GPL
+#define KBUILD_MODNAME "XDP_flow_collect"
 #define IPv4 0x0800
 #define IPv6 0X86dd
 #define VLAN 0x8100
@@ -130,7 +131,7 @@ static inline void parse_ipv6(void *data, void *data_end, u_short offset, packet
   }
 }
 
-int xdp_parser(struct CTXTYPE *ctx)
+int xdp_parser(struct xdp_md *ctx)
 {
   // Retrieve data from context
   void *data = (void *)(long)(ctx -> data);
@@ -166,10 +167,9 @@ int xdp_parser(struct CTXTYPE *ctx)
   // VLAN Packet Handling
   else if (ether_le == VLAN)
   {
-    return XDP_PASS;
+    return 0;
   }
 
-
-  return XDP_PASS;
+  return 0;
 }
 
