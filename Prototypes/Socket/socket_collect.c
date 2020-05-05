@@ -11,7 +11,7 @@ int filter(struct __sk_buff *skb)
   int ethertype = ethernet -> type;
 
   // Keep IP Ethernet || VLAN Ethernet
-  if (ethertype == 0x0800 || ethertype == 0x8100)
+  if (ethertype == 0x0800 || ethertype == 0x8100 || ethertype == 0x86dd)
   {
     return -1;
   }
