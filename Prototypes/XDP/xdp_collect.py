@@ -17,10 +17,10 @@
 import bcc
 from bcc import BPF
 from enum import Enum
+import ctypes
 import argparse
 import logging
 import os
-from socket import *
 
 # Global Variables #
 
@@ -47,7 +47,7 @@ def main(args):
 
     # Compile and load the required source C file
     logger.debug("Loading xdp_collect.c...")
-    bpf = BPF(src_file="xdp_collect.c", debug=bcc.DEBUG_SOURCE);
+    bpf = BPF(src_file="xdp_collect.c", debug=bcc.DEBUG_SOURCE)
 
     # Get the main function
     logger.debug("Loading function xdp_parser()...")
@@ -55,8 +55,18 @@ def main(args):
     logger.debug("Attaching xdp_parser() to kernel hook...")
     bpf.attach_xdp(IF, fn, 0)
 
+    #bpf['counters'][ctypes.c_int(RESULTS_IDX)] = ctypes.c_int(0)
+
+    # Set up jump tables for protocol parsing
+    for i, fn in [(4, "parse_ipv4"), (6, "parse_ipv6")]:
+        _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
+
+    # for i, fn in [(1, "parse_icmp"), (6, "parse_tcp"), (17, "parse_udp")]:
+    #     _set_bpf_jumptable(bpf, "parse_layer4", i, fn, BPF.XDP)
+
     # Main flow collecting segment
     while True:
+        logger.warn("HI")
         try:
             (_, _, _, _, _, msg) = bpf.trace_fields()
             msg = msg.decode('utf8')
@@ -67,45 +77,16 @@ def main(args):
         except KeyboardInterrupt:
             break
 
-
-def byte_array_to_ipv4(byte_array):
-    assert len(byte_array) == 4, "Cannot convert incompatible array to IPv4"
-    ipv4 = ""
-    for byte in byte_array:
-        if ipv4 == "":
-            ipv4 += str(byte)
-        else:
-            ipv4 += "." + str(byte)
-
-    return ipv4
-
-def byte_array_to_ipv6(byte_array):
-    assert len(byte_array) == 16, "Cannot convert incompatible array to IPv6"
-    ipv6 = ""
-    i = 0
-    trunc = False
-    for byte in src_bytes:
-        if i % 2 == 0:
-            byte <<= 8
-
-        if byte == 0:
-            trunc = True
-        elif byte < 0x10:
-            byte = str(byte).replace('0', '')
-            if trunc:
-                src_ip += "::" + byte
-            else:
-                src_ip += ":" + byte
-            trunc = False
-        else:
-            if trunc:
-                src_ip += "::" + str(byte)
-            else:
-                src_ip += ":" + str(byte)
-            trunc = False
-
-        i += 1 
-
+# Credit to Joel Sommers
+def _set_bpf_jumptable(bpf, tablename, idx, fnname, progtype):
+    '''
+    (bccobj, str, int, str, int) -> None
+    Set up one entry in a bpf jump table to enable chaining
+    bpf function calls.
+    '''
+    tail_fn = bpf.load_func(fnname, progtype)
+    prog_array = bpf.get_table(tablename)
+    prog_array[ctypes.c_int(idx)] = ctypes.c_int(tail_fn.fd)
 
 # Argparse and Main Call #
 if __name__ == "__main__":

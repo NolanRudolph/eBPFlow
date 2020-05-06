@@ -6,7 +6,7 @@
 
 #define BPF_LICENSE GPL
 #define KBUILD_MODNAME "xdp_collector"
-#include <uapi/linux/bpf.h>
+#include <linux/bpf.h>
 #include <linux/inet.h>
 #include <linux/types.h>
 #include <linux/if_ether.h>
@@ -15,6 +15,7 @@
 #include <linux/in.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
+#include <linux/icmp.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #define IPv4 0x0800
@@ -27,76 +28,109 @@
 #define IP4_LEN 20
 #define IP6_LEN 40
 
+BPF_PROG_ARRAY(parse_layer3, 7);
+//BPF_PROG_ARRAY(parse_layer4, 18);
+
 typedef unsigned char u_char;
 typedef unsigned short u_short;
 typedef unsigned long u_long;
 
 typedef struct packet_attrs
 {
-  u_short proto;
+  u_short l3_proto;
+  u_short l4_proto;
   u_char src_ip[IP_LEN + 1];
   u_char dst_ip[IP_LEN + 1];
   u_short src_port;  // Type for ICMP
   u_short dst_port;  // Code for ICMP
 } packet_attrs;
 
-static inline void parse_icmp(void *data, void *data_end, u_short offset, packet_attrs *p)
+BPF_HASH(flows, int, struct packet_attrs);
+
+int xdp_parser(struct xdp_md *ctx)
 {
-  return;
+  bpf_trace_printk("hi");
+  // Retrieve data from context
+  void *data = (void *)(long)(ctx -> data);
+  void *data_end = (void *)(long)(ctx -> data_end);
+
+  // Accomplishes NOTE 2
+  if (data + sizeof(struct ethhdr) > data_end)
+  {
+    return XDP_PASS;
+  }
+
+  // Cast Ethernet Header to data
+  struct ethhdr *ether = data;
+
+  // Extract Little Endian Ethertype
+  __be16 ether_be = ether -> h_proto;
+  u_short ether_le = ntohs(ether_be);
+
+  // IPv4 Packet Handling
+  if (ether_le == IPv4)
+  {
+    parse_layer3.call(ctx, 4);
+  }
+  // IPv6 Packet Handling
+  else if (ether_le == IPv6)
+  {
+    parse_layer3.call(ctx, 6);
+  }
+  // VLAN Packet Handling
+  else if (ether_le == VLAN)
+  {
+    bpf_trace_printk("Receive Ethertype VLAN!");
+  }
+  // Other Packet Handling
+  else
+  {
+    bpf_trace_printk("IPv4/IPv6/VLAN Ethertypes were not hit!");
+  }
+
+  return XDP_DROP;
 }
 
-// Currently identical to parse_udp() but subject to change
-static inline void parse_tcp(void *data, void *data_end, u_short offset, packet_attrs *p)
+// (IPv4 i.e. parse_layer3.call(ctx, 4)) Passed context via program array
+int parse_ipv4(struct xdp_md *ctx) 
 {
-  return;
-}
+  // Retrieve data from context
+  void *data = (void *)(long)(ctx -> data);
+  void *data_end = (void *)(long)(ctx -> data_end);
 
-
-static inline void parse_udp(void *data, void *data_end, u_short offset, packet_attrs *p)
-{
-  return;
-}
-
-// (IPv4) Passed data pointers and a packet_attrs struct to fill
-static inline void parse_ipv4(void *data, void *data_end, u_short offset, packet_attrs *p) 
-{
-  struct iphdr *iph = data + offset;
+  struct iphdr *iph = data + sizeof(struct ethhdr);
 
   // Make sure the data is accessible (see note 2 above)
   if ((void *)&iph[1] > data_end)
-    return;
+    return XDP_DROP;
 
   u_short proto = iph -> protocol;
 
-  // Fill in packet attributes
-  p -> proto = proto;
-
-  snprintf(p -> src_ip, IP4_LEN, "%uI4", ntohs(iph -> saddr));
-  snprintf(p -> dst_ip, IP4_LEN, "%uI4", ntohs(iph -> daddr));
-
-  // Update offset
-  offset += sizeof(*iph);
-
-  // Forward packet to respective next header
-  switch (proto)
+  if (proto == ICMP)
   {
-    case ICMP:
-      parse_icmp(data, data_end, offset, p);
-      break;
 
-    case TCP:
-      parse_tcp(data, data_end, offset, p);
-      break;
-
-    case UDP:
-      parse_udp(data, data_end, offset, p);
-      break;
   }
+  else if (proto == TCP)
+  {
+
+  }
+  else if (proto == UDP)
+  {
+
+  }
+  else
+  {
+    return XDP_DROP;
+  }
+
+  return XDP_PASS;
 }
 
-// (IPv6) Passed data pointers and a packet_attrs struct to fill
-static inline void parse_ipv6(void *data, void *data_end, u_short offset, packet_attrs *p)
+// (IPv6 i.e. parse_layer3.call(ctx, 6)) Passed context via program array
+int parse_ipv6(struct xdp_md *ctx)
 {
+  return 1;
+  /*
   struct ipv6hdr *ip6h = data + offset;
 
   // Make sure the data is accessible (see note 2 above)
@@ -128,49 +162,23 @@ static inline void parse_ipv6(void *data, void *data_end, u_short offset, packet
       parse_udp(data, data_end, offset, p);
       break;
   }
+  */
 }
 
-int xdp_parser(struct xdp_md *ctx)
+int parse_icmp(struct xdp_md *ctx)
 {
-  bpf_trace_printk("hi. :P");
+  return 1;
+}
 
-  // Retrieve data from context
-  void *data = (void *)(long)(ctx -> data);
-  void *data_end = (void *)(long)(ctx -> data_end);
+// Currently identical to parse_udp() but subject to change later in project
+int parse_tcp(struct xdp_md *ctx)
+{
+  return 1;
+}
 
-  // Cast Ethernet Header to data
-  struct ethhdr *ether = data;
 
-  // Extract Little Endian Ethertype
-  __be16 ether_be = ether -> h_proto;
-  u_short ether_le = ntohs(ether_be);
-  u_long nh_off = sizeof(*ether);
-
-  // IPv4 Packet Handling
-  if (ether_le == IPv4)
-  {
-    // Packet to be filled out
-    packet_attrs p;
-
-    // Fill out sections of packet_attrs
-    parse_ipv4(data, data_end, nh_off, &p);
-  }
-  // IPv6 Packet Handling
-  else if (ether_le == IPv6)
-  {
-    // Packet to be filled out
-    packet_attrs p;
-
-    // Fill out sections of packet_attrs
-    parse_ipv6(data, data_end, nh_off, &p);
-  }
-  // VLAN Packet Handling
-  else if (ether_le == VLAN)
-  {
-    return XDP_DROP;
-  }
-
-  bpf_trace_printk("hi. :P");
-  return XDP_DROP;
+int parse_udp(struct xdp_md *ctx)
+{
+  return 1;
 }
 
