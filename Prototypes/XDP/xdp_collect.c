@@ -92,6 +92,8 @@ int xdp_parser(struct xdp_md *ctx)
 // (IPv4 i.e. parse_layer3.call(ctx, 4)) Passed context via program array
 int parse_ipv4(struct xdp_md *ctx) 
 {
+  uint16_t offset = sizeof(struct ethhdr);
+
   // Packet to store in hash
   packet_attrs p;
 
@@ -102,12 +104,13 @@ int parse_ipv4(struct xdp_md *ctx)
   void *data = (void *)(long)(ctx -> data);
   void *data_end = (void *)(long)(ctx -> data_end);
 
-  // Fix IP Header pointer to correct location
-  struct iphdr *iph = data + sizeof(struct ethhdr);
-
   // Make sure the data is accessible (see note 2 above)
-  if ((void *)&iph[1] > data_end)
+  if (data + offset > data_end)
     return XDP_DROP;
+
+  // Fix IP Header pointer to correct location
+  struct iphdr *iph = data + offset;
+  offset += sizeof(struct iphdr);
 
   u_short proto = iph -> protocol;
 
@@ -116,13 +119,13 @@ int parse_ipv4(struct xdp_md *ctx)
   __builtin_memcpy(p.src_ip, &(iph -> saddr), IP4_LEN);
   __builtin_memcpy(p.dst_ip, &(iph -> daddr), IP4_LEN);
 
-  // Next Header Offset
-  uint16_t nh_off = sizeof(struct ethhdr) + sizeof(*iph);
-
   // Put layer 4 attributes in packet_attrs
   if (proto == ICMP)
   {
-    struct icmphdr *icmph = data + nh_off;
+    if (data + offset > data_end)
+      return XDP_DROP;
+
+    struct icmphdr *icmph = data + offset;
 
     // Store L4 Protocol, src_port (type), and dst_port (code)
     p.l4_proto = ICMP;
@@ -132,8 +135,11 @@ int parse_ipv4(struct xdp_md *ctx)
   }
   else if (proto == TCP)
   {
-    struct tcphdr *tcph = data + nh_off;
-    
+    if (data + offset > data_end)
+      return XDP_DROP;
+
+    struct tcphdr *tcph = data + offset;
+
     // Store L4 Protocol, src_port, and dst_port
     p.l4_proto = TCP;
     p.src_port = tcph -> source;
@@ -141,8 +147,11 @@ int parse_ipv4(struct xdp_md *ctx)
   }
   else if (proto == UDP)
   {
-    struct udphdr *udph = data + nh_off;
-    
+    if (data + offset > data_end)
+      return XDP_DROP;
+
+    struct udphdr *udph = data + offset;
+
     // Store L4 Protocol, src_port, and dst_port
     p.l4_proto = UDP;
     p.src_port = udph -> source;
