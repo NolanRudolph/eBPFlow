@@ -14,6 +14,7 @@
 #       i. virtio_net
 
 # Imports #
+import bcc
 from bcc import BPF
 from enum import Enum
 import argparse
@@ -46,17 +47,26 @@ def main(args):
 
     # Compile and load the required source C file
     logger.debug("Loading xdp_collect.c...")
-    bpf = BPF(src_file="xdp_collect.c");
+    bpf = BPF(src_file="xdp_collect.c", debug=bcc.DEBUG_SOURCE);
 
     # Get the main function
     logger.debug("Loading function xdp_parser()...")
-    fn = bpf.load_func("xdp_parse", BPF.XDP)
+    fn = bpf.load_func("xdp_parser", BPF.XDP)
     logger.debug("Attaching xdp_parser() to kernel hook...")
     bpf.attach_xdp(IF, fn, 0)
 
     # Main flow collecting segment
     while True:
-        logger.info("Running :)");
+        try:
+            (_, _, _, _, _, msg) = bpf.trace_fields()
+            msg = msg.decode('utf8')
+            if "hi" in msg:
+                print(msg)
+        except ValueError:
+            continue
+        except KeyboardInterrupt:
+            break
+
 
 def byte_array_to_ipv4(byte_array):
     assert len(byte_array) == 4, "Cannot convert incompatible array to IPv4"
