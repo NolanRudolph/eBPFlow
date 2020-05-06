@@ -47,7 +47,7 @@ def main(args):
 
     # Compile and load the required source C file
     logger.debug("Loading xdp_collect.c...")
-    bpf = BPF(src_file="xdp_collect.c", debug=bcc.DEBUG_SOURCE)
+    bpf = BPF(src_file="xdp_collect.c", debug=bcc.DEBUG_BPF_REGISTER_STATE | bcc.DEBUG_SOURCE | bcc.DEBUG_BPF)
 
     # Get the main function
     logger.debug("Loading function xdp_parser()...")
