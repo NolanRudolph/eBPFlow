@@ -66,10 +66,8 @@ def main(args):
     while True:
         logger.info("*** RUNNING ***")
         try:
-            (_, _, _, _, _, msg) = bpf.trace_fields()
-            msg = msg.decode('utf8')
-            if "hi" in msg:
-                print(msg)
+            for k, v in bpf["flows"].items():
+                print("got.")
         except ValueError:
             continue
         except KeyboardInterrupt:

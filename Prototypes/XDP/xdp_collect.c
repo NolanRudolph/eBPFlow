@@ -37,15 +37,15 @@ typedef struct packet_attrs
 {
   uint16_t l2_proto;
   uint8_t l4_proto;
-  u_char src_ip[IP_LEN];
-  u_char dst_ip[IP_LEN];
+  char src_ip[IP_LEN];
+  char dst_ip[IP_LEN];
   uint16_t src_port;  // Type for ICMP
   uint16_t dst_port;  // Code for ICMP
 } packet_attrs;
 
 
 /* BPF MAPS */
-BPF_HASH(flows, uint16_t, struct packet_attrs, 1024);
+BPF_HASH(flows, uint16_t, struct packet_attrs, 10);
 BPF_PROG_ARRAY(parse_layer3, 7);
 
 
@@ -103,7 +103,7 @@ int xdp_parser(struct xdp_md *ctx)
 int parse_ipv4(struct xdp_md *ctx) 
 {
   // Packet to store in hash
-  packet_attrs p;
+  packet_attrs p = {0, 0, "", "", 0, 0};
 
   // Offset for memory boundary checks
   int offset = sizeof(struct ethhdr);
@@ -160,6 +160,9 @@ int parse_ipv4(struct xdp_md *ctx)
     return XDP_DROP;
   }
 
+  uint16_t key = 0;
+  packet_attrs p2 = {1, 6, "", "", 1337, 5411};
+  flows.insert(&key, &p2);
   return XDP_PASS;
 }
 
