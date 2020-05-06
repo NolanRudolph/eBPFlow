@@ -42,6 +42,7 @@ def main(args):
 
     # Retrieve user arguments
     IF = args.interface
+    logger.info("Using interface %s" % IF)
 
     # Compile and load the required source C file
     logger.debug("Loading xdp_collect.c...")
@@ -49,7 +50,7 @@ def main(args):
 
     # Get the main function
     logger.debug("Loading function xdp_parser()...")
-    fn = bpf.load_func("xdp_parser", BPF.XDP)
+    fn = bpf.load_func("xdp_parse", BPF.XDP)
     logger.debug("Attaching xdp_parser() to kernel hook...")
     bpf.attach_xdp(IF, fn, 0)
 

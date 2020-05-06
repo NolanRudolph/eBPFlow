@@ -5,7 +5,7 @@
 //         3. Excessive use of eBPF instructions
 
 #define BPF_LICENSE GPL
-#define KBUILD_MODNAME "XDP_flow_collect"
+#define KBUILD_MODNAME "foo"
 #define IPv4 0x0800
 #define IPv6 0X86dd
 #define VLAN 0x8100
@@ -15,8 +15,8 @@
 #define IP_LEN 40
 #define IP4_LEN 20
 #define IP6_LEN 40
-#include <uapi/linux/ptrace.h>
-#include <uapi/linux/bpf.h>
+#include <linux/ptrace.h>
+#include <linux/bpf.h>
 #include <linux/inet.h>
 #include <linux/types.h>
 #include <linux/if_ether.h>
@@ -28,6 +28,7 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <bcc/proto.h>
+#include "lib/bpf_helpers.h"
 
 typedef unsigned char u_char;
 typedef unsigned short u_short;
@@ -42,25 +43,25 @@ typedef struct packet_attrs
   u_short dst_port;  // Code for ICMP
 } packet_attrs;
 
-static inline void parse_icmp(void *data, void *data_end, u_short offset, packet_attrs *p)
+static void parse_icmp(void *data, void *data_end, u_short offset, packet_attrs *p)
 {
   return;
 }
 
 // Currently identical to parse_udp() but subject to change
-static inline void parse_tcp(void *data, void *data_end, u_short offset, packet_attrs *p)
+static void parse_tcp(void *data, void *data_end, u_short offset, packet_attrs *p)
 {
   return;
 }
 
 
-static inline void parse_udp(void *data, void *data_end, u_short offset, packet_attrs *p)
+static void parse_udp(void *data, void *data_end, u_short offset, packet_attrs *p)
 {
   return;
 }
 
 // (IPv4) Passed data pointers and a packet_attrs struct to fill
-static inline void parse_ipv4(void *data, void *data_end, u_short offset, packet_attrs *p) 
+static void parse_ipv4(void *data, void *data_end, u_short offset, packet_attrs *p) 
 {
   struct iphdr *iph = data + offset;
 
@@ -72,6 +73,7 @@ static inline void parse_ipv4(void *data, void *data_end, u_short offset, packet
 
   // Fill in packet attributes
   p -> proto = proto;
+
   snprintf(p -> src_ip, IP4_LEN, "%uI4", ntohs(iph -> saddr));
   snprintf(p -> dst_ip, IP4_LEN, "%uI4", ntohs(iph -> daddr));
 
@@ -96,7 +98,7 @@ static inline void parse_ipv4(void *data, void *data_end, u_short offset, packet
 }
 
 // (IPv6) Passed data pointers and a packet_attrs struct to fill
-static inline void parse_ipv6(void *data, void *data_end, u_short offset, packet_attrs *p)
+static void parse_ipv6(void *data, void *data_end, u_short offset, packet_attrs *p)
 {
   struct ipv6hdr *ip6h = data + offset;
 
@@ -131,6 +133,7 @@ static inline void parse_ipv6(void *data, void *data_end, u_short offset, packet
   }
 }
 
+SEC("xdp_parse")
 int xdp_parser(struct xdp_md *ctx)
 {
   // Retrieve data from context
@@ -167,9 +170,9 @@ int xdp_parser(struct xdp_md *ctx)
   // VLAN Packet Handling
   else if (ether_le == VLAN)
   {
-    return 0;
+    return XDP_DROP;
   }
 
-  return 0;
+  return XDP_DROP;
 }
 
