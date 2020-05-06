@@ -29,6 +29,7 @@
 #define IP4_LEN 21
 #define IP6_LEN 41
 
+
 /* TYPEDEFS */
 typedef unsigned char u_char;
 
@@ -42,9 +43,11 @@ typedef struct packet_attrs
   uint16_t dst_port;  // Code for ICMP
 } packet_attrs;
 
+
 /* BPF MAPS */
-BPF_HASH(flows, uint16_t, struct packet_attrs, 10240);
+BPF_HASH(flows, uint16_t, struct packet_attrs, 1024);
 BPF_PROG_ARRAY(parse_layer3, 7);
+
 
 /* CODE */
 int xdp_parser(struct xdp_md *ctx)
@@ -70,7 +73,8 @@ int xdp_parser(struct xdp_md *ctx)
   if (ether_le == ETHERTYPE_IP)
   {
     packet_attrs p = {0, 0, "", "", 0, 0};
-    //flows.insert(0, &p);
+    uint16_t key = 0;
+    flows.insert(&key, &p);
     parse_layer3.call(ctx, 4);
     return XDP_PASS;
   }
@@ -93,6 +97,7 @@ int xdp_parser(struct xdp_md *ctx)
 
   return XDP_DROP;
 }
+
 
 // (IPv4 i.e. parse_layer3.call(ctx, 4)) Passed context via program array
 int parse_ipv4(struct xdp_md *ctx) 
@@ -131,8 +136,6 @@ int parse_ipv4(struct xdp_md *ctx)
     p.l4_proto = ICMP;
     p.src_port = icmph -> type;
     p.dst_port = icmph -> code;
-    //flows.insert(&p.src_port, &p);
-
   }
   else if (proto == TCP && (data + offset + sizeof(struct tcphdr) < data_end))
   {
@@ -152,24 +155,76 @@ int parse_ipv4(struct xdp_md *ctx)
     p.src_port = udph -> source;
     p.dst_port = udph -> dest;
   }
+  else
+  {
+    return XDP_DROP;
+  }
 
   return XDP_PASS;
 }
+
 
 // (IPv6 i.e. parse_layer3.call(ctx, 6)) Passed context via program array
 int parse_ipv6(struct xdp_md *ctx)
 {
-  return XDP_PASS;
-  /*
-  // Make sure the data is accessible (see note 2 above)
-  if ((void *)&ip6h[1] > data_end)
-    return;
+  // Packet to store in hash
+  packet_attrs p;
 
-  struct ipv6hdr *ip6h = data + offset;
+  // Offset for memory boundary checks
+  int offset = sizeof(struct ethhdr);
+
+  // Retrieve data from context
+  void *data = (void *)(long)(ctx -> data);
+  void *data_end = (void *)(long)(ctx -> data_end);
+
+  // Make sure the data is accessible (see note 2 above)
+  if (data + offset + sizeof(struct ipv6hdr) > data_end)
+    return XDP_DROP;
+
+  // Fix IP Header pointer to correct location
+  struct ipv6hdr *ip6h = (struct ipv6hdr *)(data + offset);
+  offset += sizeof(struct ipv6hdr);
 
   u_short proto = ip6h -> nexthdr;
 
-  */
-}
+  // Store L2 + L3 Protocol, src_ip, and dst_ip
+  p.l2_proto = ETHERTYPE_IP6;
+  __builtin_memcpy(p.src_ip, &(ip6h -> saddr), IP6_LEN);
+  __builtin_memcpy(p.dst_ip, &(ip6h -> daddr), IP6_LEN);
 
+  // Put layer 4 attributes in packet_attrs
+  if (proto == ICMP && (data + offset + sizeof(struct icmphdr) < data_end))
+  {
+    struct icmphdr *icmph = (struct icmphdr *)(data + offset);
+
+    // Store L4 Protocol, src_port (type), and dst_port (code)
+    p.l4_proto = ICMP;
+    p.src_port = icmph -> type;
+    p.dst_port = icmph -> code;
+  }
+  else if (proto == TCP && (data + offset + sizeof(struct tcphdr) < data_end))
+  {
+    struct tcphdr *tcph = (struct tcphdr *)(data + offset);
+
+    // Store L4 Protocol, src_port, and dst_port
+    p.l4_proto = TCP;
+    p.src_port = tcph -> source;
+    p.dst_port = tcph -> dest;
+  }
+  else if (proto == UDP && (data + offset + sizeof(struct udphdr) < data_end))
+  {
+    struct udphdr *udph = (struct udphdr *)(data + offset);
+
+    // Store L4 Protocol, src_port, and dst_port
+    p.l4_proto = UDP;
+    p.src_port = udph -> source;
+    p.dst_port = udph -> dest;
+  }
+  else
+  {
+    return XDP_DROP;
+  }
+
+  return XDP_PASS;
+}
 

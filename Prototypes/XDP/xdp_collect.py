@@ -55,15 +55,16 @@ def main(args):
     logger.debug("Attaching xdp_parser() to kernel hook...")
     bpf.attach_xdp(IF, fn, 0)
 
-    #bpf['counters'][ctypes.c_int(RESULTS_IDX)] = ctypes.c_int(0)
-
     # Set up jump tables for protocol parsing
     for i, fn in [(4, "parse_ipv4"), (6, "parse_ipv6")]:
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
+    # Retrieve the main table that is saturated by xdp_collect.c
+    flows = bpf.get_table("flows")
+
     # Main flow collecting segment
     while True:
-        logger.warn("HI")
+        logger.info("*** RUNNING ***")
         try:
             (_, _, _, _, _, msg) = bpf.trace_fields()
             msg = msg.decode('utf8')
