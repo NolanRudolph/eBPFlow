@@ -43,7 +43,7 @@ typedef struct packet_attrs
   uint16_t dst_port;  // Code for ICMP
 } packet_attrs;
 
-BPF_HASH(flows, int, struct packet_attrs);
+BPF_HASH(flows, uint16_t, struct packet_attrs);
 
 int xdp_parser(struct xdp_md *ctx)
 {
@@ -93,7 +93,7 @@ int xdp_parser(struct xdp_md *ctx)
 int parse_ipv4(struct xdp_md *ctx) 
 {
   // Packet to store in hash
-  packet_attrs p = {0, 0, 0, "", "", 0, 0};
+  packet_attrs p;
 
   // Store L2 Protocol
   p.l2_proto = ETHERTYPE_IP;
@@ -152,7 +152,8 @@ int parse_ipv4(struct xdp_md *ctx)
   {
     return XDP_DROP;
   }
-
+  
+  flows.insert(&p.src_port, &p);
   return XDP_PASS;
 }
 
