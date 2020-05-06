@@ -72,9 +72,11 @@ int xdp_parser(struct xdp_md *ctx)
   // IPv4 Packet Handling
   if (ether_le == ETHERTYPE_IP)
   {
+    /*
     packet_attrs p = {0, 0, "", "", 0, 0};
     uint16_t key = 0;
     flows.insert(&key, &p);
+    */
     parse_layer3.call(ctx, 4);
     return XDP_PASS;
   }
@@ -127,6 +129,11 @@ int parse_ipv4(struct xdp_md *ctx)
   __builtin_memcpy(p.src_ip, &(iph -> saddr), IP4_LEN);
   __builtin_memcpy(p.dst_ip, &(iph -> daddr), IP4_LEN);
 
+  // Scope variables
+  uint8_t proto2 = 0;
+  uint16_t src_port2 = 0;
+  uint16_t dst_port2 = 0;
+
   // Put layer 4 attributes in packet_attrs
   if (proto == ICMP && (data + offset + sizeof(struct icmphdr) < data_end))
   {
@@ -161,7 +168,7 @@ int parse_ipv4(struct xdp_md *ctx)
   }
 
   uint16_t key = 0;
-  packet_attrs p2 = {1, 6, "", "", 1337, 5411};
+  packet_attrs p2 = {1, 0, "", "", 1, 0};
   flows.insert(&key, &p2);
   return XDP_PASS;
 }

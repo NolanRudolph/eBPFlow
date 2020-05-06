@@ -1,0 +1,28 @@
+2020-05-06 05:33:06,915 INFO Start time Wed May  6 05:33:06 2020
+2020-05-06 05:33:06,915 INFO Interface vlan917
+2020-05-06 05:33:06,927 INFO ifindex for vlan917 is 6
+2020-05-06 05:33:07,452 INFO host of interest: address 64.86.148.139 name ndt-iupui-mlab1-lga03.measurement-lab.org
+2020-05-06 05:33:07,454 INFO host of interest: address 2001:5a0:4300::139 name ndt-iupui-mlab1-lga03.measurement-lab.org
+2020-05-06 05:33:07,672 INFO host of interest: address 173.205.3.11 name ndt-iupui-mlab1-sea03.measurement-lab.org
+2020-05-06 05:33:07,673 INFO host of interest: address 2001:668:1f:1d::11 name ndt-iupui-mlab1-sea03.measurement-lab.org
+2020-05-06 05:33:07,727 INFO host of interest: address 197.136.0.75 name ndt-iupui-mlab1-nbo01.measurement-lab.org
+2020-05-06 05:33:07,729 INFO host of interest: address 2c0f:fe08:10:64::75 name ndt-iupui-mlab1-nbo01.measurement-lab.org
+2020-05-06 05:33:07,843 INFO host of interest: address 80.239.169.11 name ndt-iupui-mlab1-ams03.measurement-lab.org
+2020-05-06 05:33:07,844 INFO host of interest: address 2001:2030:32::11 name ndt-iupui-mlab1-ams03.measurement-lab.org
+2020-05-06 05:33:07,899 INFO host of interest: address 4.15.35.139 name ndt-iupui-mlab1-dfw03.measurement-lab.org
+2020-05-06 05:33:07,901 INFO host of interest: address 2001:1900:2200:44::139 name ndt-iupui-mlab1-dfw03.measurement-lab.org
+2020-05-06 05:33:07,955 INFO host of interest: address 163.7.129.11 name ndt-iupui-mlab1-akl01.measurement-lab.org
+2020-05-06 05:33:07,957 INFO host of interest: address 2404:138:4009::11 name ndt-iupui-mlab1-akl01.measurement-lab.org
+2020-05-06 05:33:08,012 INFO host of interest: address 213.208.152.11 name ndt-iupui-mlab1-vie01.measurement-lab.org
+2020-05-06 05:33:08,014 INFO host of interest: address 2a01:190:1700:38::11 name ndt-iupui-mlab1-vie01.measurement-lab.org
+2020-05-06 05:33:08,068 INFO host of interest: address 180.87.97.75 name ndt-iupui-mlab1-sin01.measurement-lab.org
+2020-05-06 05:33:08,070 INFO host of interest: address 2405:2000:301::75 name ndt-iupui-mlab1-sin01.measurement-lab.org
+2020-05-06 05:33:08,125 INFO host of interest: address 193.1.12.203 name ndt-iupui-mlab1-dub01.measurement-lab.org
+2020-05-06 05:33:08,127 INFO host of interest: address 2001:770:b5::203 name ndt-iupui-mlab1-dub01.measurement-lab.org
+2020-05-06 05:33:08,182 INFO host of interest: address 66.110.73.11 name ndt-iupui-mlab1-mia03.measurement-lab.org
+2020-05-06 05:33:08,184 INFO host of interest: address 2001:5a0:3801::11 name ndt-iupui-mlab1-mia03.measurement-lab.org
+2020-05-06 05:33:08,217 INFO Interface index 6
+2020-05-06 05:42:12,396 INFO Got termination signal
+2020-05-06 05:42:13,092 INFO done; waiting 0.5s for any stray responses
+2020-05-06 05:42:13,593 INFO removing filters and shutting down
+2020-05-06 05:42:13,596 INFO final result count: 0
