@@ -61,9 +61,6 @@ def main(args):
     for i, fn in [(4, "parse_ipv4"), (6, "parse_ipv6")]:
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
-    # for i, fn in [(1, "parse_icmp"), (6, "parse_tcp"), (17, "parse_udp")]:
-    #     _set_bpf_jumptable(bpf, "parse_layer4", i, fn, BPF.XDP)
-
     # Main flow collecting segment
     while True:
         logger.warn("HI")
