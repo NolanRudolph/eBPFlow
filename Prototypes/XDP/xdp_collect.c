@@ -19,9 +19,6 @@
 #include <linux/icmp.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
-#define ETHERTYPE_IP 0x0800
-#define ETHERTYPE_IP6 0X86dd
-#define ETHERTYPE_VLAN 0x8100
 #define ICMP 1
 #define TCP 6
 #define UDP 17
@@ -56,10 +53,6 @@ int xdp_parser(struct xdp_md *ctx)
   void *data = (void *)(long)(ctx -> data);
   void *data_end = (void *)(long)(ctx -> data_end);
 
-  int key = 0;
-  packet_attrs p = {0, 0, 0, 0, 0, 0};
-  flows.insert(&key, &p);
-
   // Accomplishes NOTE 2
   if (data + sizeof(struct ethhdr) > data_end)
   {
@@ -74,21 +67,21 @@ int xdp_parser(struct xdp_md *ctx)
   uint16_t ether_le = ntohs(ether_be);
 
   // IPv4 Packet Handling
-  if (ether_be == bpf_htons(ETHERTYPE_IP))
+  if (ether_be == htons(ETH_P_IP))
   {
     parse_layer3.call(ctx, 4);
     return XDP_PASS;
   }
   // IPv6 Packet Handling
-  else if (ether_be == bpf_htons(ETHERTYPE_IP6))
+  else if (ether_be == htons(ETH_P_IPV6))
   {
     parse_layer3.call(ctx, 6);
     return XDP_PASS;
   }
   // VLAN Packet Handling
-  else if (ether_be == bpf_htons(ETHERTYPE_VLAN))
+  else if (ether_be == htons(ETH_P_8021Q) || ether_be == htons(ETH_P_8021AD))
   {
-    bpf_trace_printk("Receive Ethertype VLAN!");
+    bpf_trace_printk("Received Ethertype VLAN!");
   }
   // Other Packet Handling
   else
@@ -123,7 +116,7 @@ int parse_ipv4(struct xdp_md *ctx)
   u_short proto = iph -> protocol;
 
   // Store L2 + L3 Protocol, src_ip, and dst_ip
-  p.l2_proto = ETHERTYPE_IP;
+  p.l2_proto = ETH_P_IP;
   __builtin_memcpy(&p.src_ip, &(iph -> saddr), sizeof(__be32));
   __builtin_memcpy(&p.dst_ip, &(iph -> daddr), sizeof(__be32));
 
@@ -201,7 +194,7 @@ int parse_ipv6(struct xdp_md *ctx)
   u_short proto = ip6h -> nexthdr;
 
   // Store L2 + L3 Protocol, src_ip, and dst_ip
-  p.l2_proto = ETHERTYPE_IP6;
+  p.l2_proto = ETH_P_IP;
   __builtin_memcpy(&p.src_ip, &(ip6h -> saddr), IP6_LEN);
   __builtin_memcpy(&p.dst_ip, &(ip6h -> daddr), IP6_LEN);
   /* CHANGE ME BACK AFTER TESTS

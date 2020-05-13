@@ -37,11 +37,18 @@ UDP = 8
 def main(args):
     begin = time.time()
 
-    # Logger stuff
+    # User argument handling
     loglevel = logging.INFO
+    run_time = 5
+    out_file = "flows.csv"
     if args.debug:
         loglevel = logging.DEBUG
+    if args.time:
+        run_time = args.time
+    if args.output:
+        out_file = args.output
 
+    # Logger stuff
     logging.basicConfig(level=loglevel, 
                         format="[%(levelname)s] %(name)s : %(message)s")
     logger = logging.getLogger(__name__)
@@ -65,13 +72,13 @@ def main(args):
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
     # Main flow collecting segment
-    while abs(time.time() - begin) < 5:
+    while abs(time.time() - begin) < run_time:
         print("*** COLLECTING ***")
 
     # Retrieve the main table that is saturated by xdp_collect.c
     flows = bpf.get_table("flows")
 
-    f = open("flows.csv", "w+")
+    f = open(out_file, "w+")
     try:
         all_flows = flows.items()
         all_flows_len = len(all_flows)
@@ -111,5 +118,9 @@ if __name__ == "__main__":
                         help="Specify which network interface to listen for packets on")
     parser.add_argument("-d", "--debug", default=False, required=False, action="store_true",
                         help="Allow debug logging")
+    parser.add_argument("-t", "--time", default=5, required=False, type=int, 
+                        help="Time to run in seconds (default = 5)")
+    parser.add_argument("-o", "--output", default="flows.csv", required=False, type=str,
+                        help="Name of file to output flows in CSV format")
     args = parser.parse_args()
     main(args)
