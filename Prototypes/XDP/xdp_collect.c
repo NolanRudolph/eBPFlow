@@ -174,7 +174,7 @@ int parse_ipv4(struct xdp_md *ctx)
 int parse_ipv6(struct xdp_md *ctx)
 {
   // Packet to store in hash
-  packet_attrs p;
+  packet_attrs p = {0, 0, 0, 0, 0, 0};
 
   // Offset for memory boundary checks
   int offset = sizeof(struct ethhdr);
@@ -194,13 +194,9 @@ int parse_ipv6(struct xdp_md *ctx)
   u_short proto = ip6h -> nexthdr;
 
   // Store L2 + L3 Protocol, src_ip, and dst_ip
-  p.l2_proto = ETH_P_IP;
-  __builtin_memcpy(&p.src_ip, &(ip6h -> saddr), IP6_LEN);
-  __builtin_memcpy(&p.dst_ip, &(ip6h -> daddr), IP6_LEN);
-  /* CHANGE ME BACK AFTER TESTS
-  __builtin_memcpy(&p.src_ip, &(ip6h -> saddr), IP6_LEN);
-  __builtin_memcpy(&p.dst_ip, &(ip6h -> daddr), IP6_LEN);
-  */
+  p.l2_proto = ETH_P_IPV6;
+  __builtin_memcpy(&p.src_ip, &(ip6h -> saddr), sizeof(__be32));
+  __builtin_memcpy(&p.dst_ip, &(ip6h -> daddr), sizeof(__be32));
 
   // Put layer 4 attributes in packet_attrs
   if (proto == ICMP && (data + offset + sizeof(struct icmphdr) < data_end))
@@ -209,8 +205,9 @@ int parse_ipv6(struct xdp_md *ctx)
 
     // Store L4 Protocol, src_port (type), and dst_port (code)
     p.l4_proto = ICMP;
-    p.src_port = icmph -> type;
-    p.dst_port = icmph -> code;
+
+    __builtin_memcpy(&p.src_port, &(icmph -> type), sizeof(uint8_t));
+    __builtin_memcpy(&p.dst_port, &(icmph -> code), sizeof(uint8_t));
   }
   else if (proto == TCP && (data + offset + sizeof(struct tcphdr) < data_end))
   {
@@ -218,8 +215,9 @@ int parse_ipv6(struct xdp_md *ctx)
 
     // Store L4 Protocol, src_port, and dst_port
     p.l4_proto = TCP;
-    p.src_port = tcph -> source;
-    p.dst_port = tcph -> dest;
+
+    __builtin_memcpy(&p.src_port, &(tcph -> source), sizeof(__be16));
+    __builtin_memcpy(&p.dst_port, &(tcph -> dest), sizeof(__be16));
   }
   else if (proto == UDP && (data + offset + sizeof(struct udphdr) < data_end))
   {
@@ -227,14 +225,27 @@ int parse_ipv6(struct xdp_md *ctx)
 
     // Store L4 Protocol, src_port, and dst_port
     p.l4_proto = UDP;
-    p.src_port = udph -> source;
-    p.dst_port = udph -> dest;
+
+    __builtin_memcpy(&p.src_port, &(udph -> source), sizeof(__be16));
+    __builtin_memcpy(&p.dst_port, &(udph -> dest), sizeof(__be16));
   }
   else
   {
     return XDP_DROP;
   }
 
+  int first = 0;
+  int key = 0;
+  int next_key = 0;
+  int *key_p = cur_key.lookup_or_try_init(&first, &first);
+
+  if (key_p)
+  {
+    __builtin_memcpy(&key, key_p, sizeof(int));
+    *key_p += 1;
+  }
+
+  flows.insert(&key, &p);
   return XDP_PASS;
 }
 

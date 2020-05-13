@@ -24,6 +24,7 @@ import os
 import time
 from socket import inet_ntoa, ntohl, ntohs
 import struct
+import ipaddress
 
 # Global Variables #
 
@@ -86,14 +87,20 @@ def main(args):
         f.write("SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO\n")
         for i in range(0, all_flows_len):
             cur_flow = all_flows[i][1]
-            src_ip = inet_ntoa(struct.pack('!L', ntohl(cur_flow.src_ip)))
-            dst_ip = inet_ntoa(struct.pack('!L', ntohl(cur_flow.dst_ip)))
-            src_p  = ntohs(cur_flow.src_port)
-            dst_p  = ntohs(cur_flow.dst_port)
-            proto1 = cur_flow.l2_proto
-            proto2 = cur_flow.l4_proto
-            logger.info("New Flow: {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, hex(proto1), proto2))
-            f.write("{},{},{},{},{},{}\n".format(src_ip, dst_ip, src_p, dst_p, hex(proto1), proto2))
+            l2_proto = cur_flow.l2_proto
+            l4_proto = cur_flow.l4_proto
+            src_ip = ""
+            dst_ip = ""
+            if l2_proto == 0x0800:
+                src_ip = ipaddress.ip_address(ntohl(cur_flow.src_ip))
+                dst_ip = ipaddress.ip_address(ntohl(cur_flow.dst_ip))
+            elif l2_proto == 0x8100:
+                src_ip = ipaddress.ipv6_address(ntohl(cur_flow.src_ip))
+                dst_ip = ipaddress.ipv6_address(ntohl(cur_flow.dst_ip))
+            src_p = ntohs(cur_flow.src_port)
+            dst_p = ntohs(cur_flow.dst_port)
+            logger.info("New Flow: {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), l4_proto))
+            f.write("{},{},{},{},{},{}\n".format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), l4_proto))
     except ValueError:
         logger.error("VALUE ERROR")
 
