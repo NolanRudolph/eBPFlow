@@ -23,6 +23,7 @@ import logging
 import os
 import time
 from socket import inet_ntoa
+import struct
 
 # Global Variables #
 
@@ -75,8 +76,8 @@ def main(args):
             print("          SRC IP    DST IP    SRC PORT    DST PORT   ETHER TYPE   PROTO")
             for i in range(0, all_flows_len):
                 cur_flow = all_flows[i][1]
-                src_ip = inet_ntoa(cur_flow.src_ip)
-                dst_ip = inet_ntoa(cur_flow.dst_ip)
+                src_ip = inet_ntoa(struct.pack('!L', cur_flow.src_ip))
+                dst_ip = inet_ntoa(struct.pack('!L', cur_flow.dst_ip))
                 src_p  = cur_flow.src_port
                 dst_p  = cur_flow.dst_port
                 proto1 = cur_flow.l2_proto
