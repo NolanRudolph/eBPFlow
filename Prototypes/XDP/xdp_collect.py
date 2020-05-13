@@ -76,7 +76,7 @@ def main(args):
         except KeyboardInterrupt:
             break
 
-    bpg.remove_xdp(IF, 0)
+    bpf.remove_xdp(IF, 0)
 
 # Credit to Joel Sommers
 def _set_bpf_jumptable(bpf, tablename, idx, fnname, progtype):
