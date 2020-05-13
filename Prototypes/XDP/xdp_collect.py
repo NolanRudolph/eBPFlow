@@ -66,7 +66,7 @@ def main(args):
     while True:
         logger.info("*** RUNNING ***")
         try:
-            for k, v in bpf["flows"].items():
+            for flow in bpf["flows"].items():
                 print("got.")
         except ValueError:
             continue
