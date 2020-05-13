@@ -37,24 +37,16 @@ typedef struct packet_attrs
 {
   uint16_t l2_proto;
   uint8_t l4_proto;
-  /*
-  char src_ip[IP_LEN];
-  char dst_ip[IP_LEN];
-  */
   __be32 src_ip;
   __be32 dst_ip;
   __be16 src_port;
   __be16 dst_port;
-  /*
-  uint16_t src_port;  // Type for ICMP
-  uint16_t dst_port;  // Code for ICMP
-  */
 } packet_attrs;
 
 
 /* BPF MAPS */
-BPF_ARRAY(cur_key, int, 1);
-BPF_HASH(flows, int, struct packet_attrs, 10);
+BPF_ARRAY(cur_key, int, 200);
+BPF_HASH(flows, int, struct packet_attrs, 1000);
 BPF_PROG_ARRAY(parse_layer3, 7);
 
 /* CODE */
@@ -167,15 +159,14 @@ int parse_ipv4(struct xdp_md *ctx)
   }
 
   int first = 0;
-  int second = 1;
   int key = 0;
   int next_key = 0;
-  int *key_p = cur_key.lookup_or_try_init(&first, &second);
-  if (key_p != NULL)
+  int *key_p = cur_key.lookup_or_try_init(&first, &first);
+
+  if (key_p)
   {
     __builtin_memcpy(&key, key_p, sizeof(int));
-    int next_key = key + 1;
-    cur_key.update(&key, &next_key);
+    *key_p += 1;
   }
 
   flows.insert(&key, &p);

@@ -22,6 +22,7 @@ import argparse
 import logging
 import os
 import time
+from socket import inet_ntoa
 
 # Global Variables #
 
@@ -69,9 +70,20 @@ def main(args):
     while abs(time.time() - begin) < 5:
         print("*** RUNNING ***")
         try:
-            for k, v in bpf["flows"].items():
-                print("got {}".format(k))
+            all_flows = flows.items()
+            all_flows_len = len(all_flows)
+            print("          SRC IP    DST IP    SRC PORT    DST PORT   ETHER TYPE   PROTO")
+            for i in range(0, all_flows_len):
+                cur_flow = all_flows[i][1]
+                src_ip = inet_ntoa(cur_flow.src_ip)
+                dst_ip = inet_ntoa(cur_flow.dst_ip)
+                src_p  = cur_flow.src_port
+                dst_p  = cur_flow.dst_port
+                proto1 = cur_flow.l2_proto
+                proto2 = cur_flow.l4_proto
+                print("New Flow: {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, proto1, proto2))
         except ValueError:
+            print("VALUE ERROR")
             continue
         except KeyboardInterrupt:
             break
