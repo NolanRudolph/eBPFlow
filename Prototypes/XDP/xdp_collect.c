@@ -80,85 +80,8 @@ int xdp_parser(struct xdp_md *ctx)
   // IPv4 Packet Handling
   if (ether_le == ETHERTYPE_IP)
   {
-    // Packet to store in hash
-    packet_attrs p = {0, 0, 0, 0, 0, 0};
-
-    // Offset for memory boundary checks
-    int offset = sizeof(struct ethhdr);
-
-    // Retrieve data from context
-    void *data = (void *)(long)(ctx -> data);
-    void *data_end = (void *)(long)(ctx -> data_end);
-
-    // Make sure the data is accessible (see note 2 above)
-    if (data + offset + sizeof(struct iphdr) > data_end)
-      return XDP_DROP;
-
-    // Fix IP Header pointer to correct location
-    struct iphdr *iph = (struct iphdr *)(data + offset);
-    offset += sizeof(struct iphdr);
-
-    u_short proto = iph -> protocol;
-
-    // Store L2 + L3 Protocol, src_ip, and dst_ip
-    p.l2_proto = ETHERTYPE_IP;
-    __builtin_memcpy(&p.src_ip, &(iph -> saddr), sizeof(__be32));
-    __builtin_memcpy(&p.dst_ip, &(iph -> daddr), sizeof(__be32));
-
-    // Put layer 4 attributes in packet_attrs
-    if (proto == ICMP && (data + offset + sizeof(struct icmphdr) < data_end))
-    {
-      struct icmphdr *icmph = (struct icmphdr *)(data + offset);
-
-      // Store L4 Protocol, src_port (type), and dst_port (code)
-      p.l4_proto = ICMP;
-      
-      __builtin_memcpy(&p.src_port, &(icmph -> type), sizeof(uint8_t));
-      __builtin_memcpy(&p.dst_port, &(icmph -> code), sizeof(uint8_t));
-    }
-    else if (proto == TCP && (data + offset + sizeof(struct tcphdr) < data_end))
-    {
-      struct tcphdr *tcph = (struct tcphdr *)(data + offset);
-
-      // Store L4 Protocol, src_port, and dst_port
-      p.l4_proto = TCP;
-
-      __builtin_memcpy(&p.src_port, &(tcph -> source), sizeof(__be16));
-      __builtin_memcpy(&p.dst_port, &(tcph -> dest), sizeof(__be16));
-    }
-    else if (proto == UDP && (data + offset + sizeof(struct udphdr) < data_end))
-    {
-      struct udphdr *udph = (struct udphdr *)(data + offset);
-
-      // Store L4 Protocol, src_port, and dst_port
-      p.l4_proto = UDP;
-      __builtin_memcpy(&p.src_port, &(udph -> source), sizeof(__be16));
-      __builtin_memcpy(&p.dst_port, &(udph -> dest), sizeof(__be16));
-    }
-    else
-    {
-      return XDP_DROP;
-    }
-
-    int first = 0;
-    int second = 1;
-    int key = 0;
-    int next_key = 0;
-    int *key_p = cur_key.lookup_or_try_init(&first, &second);
-    if (key_p != NULL)
-    {
-      __builtin_memcpy(&key, key_p, sizeof(int));
-      int next_key = key + 1;
-      cur_key.update(&key, &next_key);
-    }
-
-    flows.insert(&key, &p);
-    return XDP_PASS;
-
-    /* After finish debugging
     parse_layer3.call(ctx, 4);
     return XDP_PASS;
-    */
   }
   // IPv6 Packet Handling
   else if (ether_le == ETHERTYPE_IP6)
@@ -180,7 +103,6 @@ int xdp_parser(struct xdp_md *ctx)
   return XDP_DROP;
 }
 
-/*
 // (IPv4 i.e. parse_layer3.call(ctx, 4)) Passed context via program array
 int parse_ipv4(struct xdp_md *ctx) 
 {
@@ -259,7 +181,6 @@ int parse_ipv4(struct xdp_md *ctx)
   flows.insert(&key, &p);
   return XDP_PASS;
 }
-*/
 
 // (IPv6 i.e. parse_layer3.call(ctx, 6)) Passed context via program array
 int parse_ipv6(struct xdp_md *ctx)
