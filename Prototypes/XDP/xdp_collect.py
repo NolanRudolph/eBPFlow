@@ -21,6 +21,7 @@ import ctypes
 import argparse
 import logging
 import os
+import time
 
 # Global Variables #
 
@@ -32,6 +33,8 @@ UDP = 8
 
 # Main #
 def main(args):
+    begin = time.time()
+
     # Logger stuff
     loglevel = logging.INFO
     if args.debug:
@@ -63,15 +66,17 @@ def main(args):
     flows = bpf.get_table("flows")
 
     # Main flow collecting segment
-    while True:
-        logger.info("*** RUNNING ***")
+    while abs(time.time() - begin) < 5:
+        print("*** RUNNING ***")
         try:
-            for flow in bpf["flows"].items():
-                print("got.")
+            for k, v in bpf["flows"].items():
+                print("got {}".format(k))
         except ValueError:
             continue
         except KeyboardInterrupt:
             break
+
+    bpg.remove_xdp(IF, 0)
 
 # Credit to Joel Sommers
 def _set_bpf_jumptable(bpf, tablename, idx, fnname, progtype):
