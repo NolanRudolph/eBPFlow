@@ -22,7 +22,7 @@ import argparse
 import logging
 import os
 import time
-from socket import inet_ntoa
+from socket import inet_ntoa, ntohl, ntohs
 import struct
 
 # Global Variables #
@@ -86,14 +86,14 @@ def main(args):
         f.write("SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO\n")
         for i in range(0, all_flows_len):
             cur_flow = all_flows[i][1]
-            src_ip = inet_ntoa(struct.pack('!L', cur_flow.src_ip))
-            dst_ip = inet_ntoa(struct.pack('!L', cur_flow.dst_ip))
-            src_p  = cur_flow.src_port
-            dst_p  = cur_flow.dst_port
+            src_ip = inet_ntoa(struct.pack('!L', ntohl(cur_flow.src_ip)))
+            dst_ip = inet_ntoa(struct.pack('!L', ntohl(cur_flow.dst_ip)))
+            src_p  = ntohs(cur_flow.src_port)
+            dst_p  = ntohs(cur_flow.dst_port)
             proto1 = cur_flow.l2_proto
             proto2 = cur_flow.l4_proto
-            logger.info("New Flow: {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, proto1, proto2))
-            f.write("{},{},{},{},{},{}\n".format(src_ip, dst_ip, src_p, dst_p, proto1, proto2))
+            logger.info("New Flow: {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, hex(proto1), proto2))
+            f.write("{},{},{},{},{},{}\n".format(src_ip, dst_ip, src_p, dst_p, hex(proto1), proto2))
     except ValueError:
         logger.error("VALUE ERROR")
 
