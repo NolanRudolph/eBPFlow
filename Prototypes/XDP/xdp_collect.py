@@ -75,7 +75,8 @@ def main(args):
     try:
         all_flows = flows.items()
         all_flows_len = len(all_flows)
-        print("          SRC IP    DST IP    SRC PORT    DST PORT   ETHER TYPE   PROTO")
+        logger.info("          SOURCE IP      DEST IP        S_PORT  D_PORT  E_TYPE PROTO")
+        f.write("SOURCE IP,DEST IP,S_PORT,D_PORT,E_TYPE,PROTO\n")
         for i in range(0, all_flows_len):
             cur_flow = all_flows[i][1]
             src_ip = inet_ntoa(struct.pack('!L', cur_flow.src_ip))
