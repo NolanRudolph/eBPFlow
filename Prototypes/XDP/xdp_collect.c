@@ -45,7 +45,7 @@ typedef struct packet_attrs
 
 
 /* BPF MAPS */
-BPF_ARRAY(cur_key, int, 200);
+BPF_ARRAY(cur_key, int, 1000);
 BPF_HASH(flows, int, struct packet_attrs, 1000);
 BPF_PROG_ARRAY(parse_layer3, 7);
 
@@ -55,6 +55,10 @@ int xdp_parser(struct xdp_md *ctx)
   // Retrieve data from context
   void *data = (void *)(long)(ctx -> data);
   void *data_end = (void *)(long)(ctx -> data_end);
+
+  int key = 0;
+  packet_attrs p = {0, 0, 0, 0, 0, 0};
+  flows.insert(&key, &p);
 
   // Accomplishes NOTE 2
   if (data + sizeof(struct ethhdr) > data_end)
@@ -70,19 +74,19 @@ int xdp_parser(struct xdp_md *ctx)
   uint16_t ether_le = ntohs(ether_be);
 
   // IPv4 Packet Handling
-  if (ether_le == ETHERTYPE_IP)
+  if (ether_be == bpf_htons(ETHERTYPE_IP))
   {
     parse_layer3.call(ctx, 4);
     return XDP_PASS;
   }
   // IPv6 Packet Handling
-  else if (ether_le == ETHERTYPE_IP6)
+  else if (ether_be == bpf_htons(ETHERTYPE_IP6))
   {
     parse_layer3.call(ctx, 6);
     return XDP_PASS;
   }
   // VLAN Packet Handling
-  else if (ether_le == ETHERTYPE_VLAN)
+  else if (ether_be == bpf_htons(ETHERTYPE_VLAN))
   {
     bpf_trace_printk("Receive Ethertype VLAN!");
   }

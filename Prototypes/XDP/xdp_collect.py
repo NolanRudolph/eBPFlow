@@ -64,19 +64,19 @@ def main(args):
     for i, fn in [(4, "parse_ipv4"), (6, "parse_ipv6")]:
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
-    # Retrieve the main table that is saturated by xdp_collect.c
-    flows = bpf.get_table("flows")
-
     # Main flow collecting segment
     while abs(time.time() - begin) < 5:
         print("*** COLLECTING ***")
+
+    # Retrieve the main table that is saturated by xdp_collect.c
+    flows = bpf.get_table("flows")
 
     f = open("flows.csv", "w+")
     try:
         all_flows = flows.items()
         all_flows_len = len(all_flows)
-        logger.info("          SOURCE IP      DEST IP        S_PORT  D_PORT  E_TYPE PROTO")
-        f.write("SOURCE IP,DEST IP,S_PORT,D_PORT,E_TYPE,PROTO\n")
+        logger.info("SOURCE IP, DEST IP,  S_PORT, D_PORT, E_TYPE, PROTO")
+        f.write("SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO\n")
         for i in range(0, all_flows_len):
             cur_flow = all_flows[i][1]
             src_ip = inet_ntoa(struct.pack('!L', cur_flow.src_ip))
@@ -85,10 +85,10 @@ def main(args):
             dst_p  = cur_flow.dst_port
             proto1 = cur_flow.l2_proto
             proto2 = cur_flow.l4_proto
-            print("New Flow: {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, proto1, proto2))
+            logger.info("New Flow: {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, proto1, proto2))
             f.write("{},{},{},{},{},{}\n".format(src_ip, dst_ip, src_p, dst_p, proto1, proto2))
     except ValueError:
-        print("VALUE ERROR")
+        logger.error("VALUE ERROR")
 
     bpf.remove_xdp(IF, 0)
     logger.info("Removed XDP Program from Kernel.")
