@@ -164,42 +164,45 @@ int parse_ipv4(struct xdp_md *ctx)
   }
 
   u64 now = bpf_ktime_get_ns();
-  flow_accms def_acc = {now, now, 0, 0};
-  flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &def_acc);
-  //u64 now = bpf_ktime_get_ns();
+  flow_accms accms = {0, 0, 0, 0};
+  flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &accms);
 
   if (flow_ptr)
   {
     // Store if above aggregation time (i.e. set ID field)
-    /*
-    if (now - (flow_ptr -> start) > AGG)
+    if (now - (flow_ptr -> start) > AGG && (flow_ptr -> start) != 0)
     {
-      __builtin_memcpy(&ins_acc, flow_ptr, sizeof(struct flow_accms));
-      ins_acc.end = now;
-      ins_acc.packets++;
-      ins_acc.bytes += bytes;
+      __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
+      accms.end = now;
+      accms.packets++;
+      accms.bytes += bytes;
+
+      // Remove the old flow
+      flows.delete(&p);
 
       // Generate a unique Store ID
-      // 
-      while(flows.lookup(&p))
-      {
-        p.store_id = bpf_get_prandom_u32();
-      }
-      //
+      p.store_id = bpf_get_prandom_u32();
 
-      flows.insert(&p, &ins_acc);
+      // Insert the old flow under a new ID - no longer edited
+      flows.insert(&p, &accms);
     }
     else
     {
+      // Update the flow otherwise
+      __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
+      ++accms.packets;
+      accms.bytes += bytes;
+
+      // First flow gets start attribute set
+      if (flow_ptr -> start == 0)
+      {
+        accms.start = now;
+      }
+      // All flows constantly update their end attribute until aggregation
+      accms.end = now;
+
+      flows.update(&p, &accms); 
     }
-  */
-    // Update the flow otherwise
-    __builtin_memcpy(&def_acc.packets, &(flow_ptr -> packets), sizeof(uint64_t));
-    __builtin_memcpy(&def_acc.bytes, &(flow_ptr -> bytes), sizeof(uint64_t));
-    ++def_acc.packets;
-    def_acc.bytes += bytes;
-    def_acc.end = now;
-    flows.update(&p, &def_acc); 
   }
   else
   {
@@ -276,23 +279,25 @@ int parse_ipv6(struct xdp_md *ctx)
     return XDP_DROP;
   }
 
+  /*
   u64 now = 60;
-  flow_accms def_acc = {now, now, 0, 0};
-  flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &def_acc);
+  flow_accms accms = {now, now, 0, 0};
+  flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &accms);
 
   if (flow_ptr)
   {
-    __builtin_memcpy(&def_acc.packets, &(flow_ptr -> packets), sizeof(uint64_t));
-    __builtin_memcpy(&def_acc.bytes, &(flow_ptr -> bytes), sizeof(uint64_t));
-    ++def_acc.packets;
-    def_acc.bytes += bytes;
-    def_acc.end = now;
-    flows.update(&p, &def_acc); 
+    __builtin_memcpy(&accms.packets, &(flow_ptr -> packets), sizeof(uint64_t));
+    __builtin_memcpy(&accms.bytes, &(flow_ptr -> bytes), sizeof(uint64_t));
+    ++accms.packets;
+    accms.bytes += bytes;
+    accms.end = now;
+    flows.update(&p, &accms); 
   }
   else
   {
     return XDP_DROP;
   }
+  */
   return XDP_PASS;
 }
 

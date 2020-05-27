@@ -46,6 +46,7 @@ def main(args):
         out_file = args.output
     if args.aggregate:
         agg_time = args.aggregate
+    agg_time *= 1e9
 
     # Logger stuff
     logging.basicConfig(level=loglevel, 
