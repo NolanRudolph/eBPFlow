@@ -16,15 +16,10 @@
 # Imports #
 import bcc
 from bcc import BPF
-from enum import Enum
-import ctypes
-import argparse
-import logging
-import os
-import sys
-import time
+import ctypes, struct
+import argparse, logging
+import os, sys, time
 from socket import inet_ntoa, ntohl, ntohs
-import struct
 import ipaddress
 
 # Global Variables #
@@ -34,11 +29,10 @@ ETH_IP = 14
 ETH_VLAN = 4
 TCP = 20
 UDP = 8
+CPUS = os.cpu_count()
 
 # Main #
 def main(args):
-    begin = time.time()
-
     # User argument handling
     loglevel = logging.INFO
     run_time = 5
@@ -74,6 +68,7 @@ def main(args):
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
     logger.info("*** COLLECTING FOR %ss ***" % run_time)
+    begin = time.time()
 
     # Main flow collecting segment (Basically sleep, but time.sleep() is janky)
     while abs(time.time() - begin) < run_time:
@@ -88,6 +83,7 @@ def main(args):
         
         # Retrive individual items as list
         all_flows = flows.items()
+        all_vals = flows.values()
         all_flows_len = len(all_flows)
 
         logger.debug("SOURCE IP, DEST IP,  S_PORT, D_PORT, E_TYPE, PROTO, #PACKETS, #BYTES")
@@ -98,6 +94,13 @@ def main(args):
             # Key: Attributes | Val: Accumulators
             attrs = all_flows[i][0]
             accms = all_flows[i][1]
+
+            # Get accumulation variables over all CPUs
+            n_packets = 0
+            n_bytes = 0
+            for j in range(0, CPUS):
+                n_packets += all_flows[i][1][j].packets
+                n_bytes += all_flows[i][1][j].bytes
 
             l2_proto = attrs.l2_proto
             l4_proto = attrs.l4_proto
@@ -116,17 +119,12 @@ def main(args):
             src_p = ntohs(attrs.src_port)
             dst_p = ntohs(attrs.dst_port)
 
-            n_packets = accms.packets
-            n_bytes = accms.bytes
-
             logger.debug("New Flow: {}, {}, {}, {}, {}, {}, {}, {}" \
                    .format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
                            l4_proto, n_packets, n_bytes))
             f.write("{},{},{},{},{},{},{},{}\n"\
               .format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
                       l4_proto, n_packets, n_bytes))
-    except:
-        logger.error("Unexpected Error:", sys.exc_info()[0])
     finally:
         bpf.remove_xdp(IF, 0)
         f.close()

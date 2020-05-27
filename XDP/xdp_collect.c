@@ -119,13 +119,13 @@ int parse_ipv4(struct xdp_md *ctx)
   offset += sizeof(struct iphdr);
 
   // # of bytes for accumulator variables
-  uint16_t bytes = 0;
+  uint16_t bytes = (ctx -> data_end) - (ctx -> data);
 
   // Store L2 + L3 Protocol, src_ip, dst_ip, and #bytes
   p.l2_proto = ETH_P_IP;
   __builtin_memcpy(&p.src_ip, &(iph -> saddr), sizeof(__be32));
   __builtin_memcpy(&p.dst_ip, &(iph -> daddr), sizeof(__be32));
-  __builtin_memcpy(&bytes, &(iph -> tot_len), sizeof(uint16_t));
+  // __builtin_memcpy(&bytes, &(iph -> tot_len), sizeof(uint16_t));
 
   // Get L4 protocol
   u_short proto = iph -> protocol;
@@ -164,8 +164,6 @@ int parse_ipv4(struct xdp_md *ctx)
   {
     return XDP_DROP;
   }
-
-  uint64_t bs = bytes;
 
   flow_accms ins_acc = {1, bytes};
   flow_accms upd_acc = {0, 0};
