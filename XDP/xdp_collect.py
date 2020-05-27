@@ -151,7 +151,7 @@ def main(args):
         logger.info("Removed XDP Program from Kernel.")
 
     # Final touch ups to CSV
-    s_flow_set = sorted(flow_set)
+    s_flow_set = sorted(flow_set, key=lambda x:float(x[:x.find(',')]))
     f.close()
 
     f = open(out_file, "r+")
