@@ -21,6 +21,7 @@ import ctypes
 import argparse
 import logging
 import os
+import sys
 import time
 from socket import inet_ntoa, ntohl, ntohs
 import struct
@@ -60,7 +61,7 @@ def main(args):
 
     # Compile and load the required source C file
     logger.debug("Loading xdp_collect.c...")
-    bpf = BPF(src_file="xdp_collect.c", debug=bcc.DEBUG_BPF_REGISTER_STATE | bcc.DEBUG_SOURCE | bcc.DEBUG_BPF)
+    bpf = BPF(src_file="xdp_collect.c", debug=bcc.DEBUG_SOURCE | bcc.DEBUG_BPF)
 
     # Get the main function
     logger.debug("Loading function xdp_parser()...")
@@ -72,9 +73,11 @@ def main(args):
     for i, fn in [(4, "parse_ipv4"), (6, "parse_ipv6")]:
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
+    logger.info("*** COLLECTING FOR %ss ***" % run_time)
+
     # Main flow collecting segment (Basically sleep, but time.sleep() is janky)
     while abs(time.time() - begin) < run_time:
-        logger.info("*** COLLECTING FOR %ss ***" % run_time)
+        logger.debug("*** COLLECTING FOR %ss ***" % run_time)
 
     # Retrieve the main table that is saturated by xdp_collect.c
     flows = bpf.get_table("flows")
@@ -122,11 +125,13 @@ def main(args):
             f.write("{},{},{},{},{},{},{},{}\n"\
               .format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
                       l4_proto, n_packets, n_bytes))
-    except ValueError:
-        logger.error("VALUE ERROR")
+    except:
+        logger.error("Unexpected Error:", sys.exc_info()[0])
+    finally:
+        bpf.remove_xdp(IF, 0)
+        f.close()
+        logger.info("Removed XDP Program from Kernel.")
 
-    bpf.remove_xdp(IF, 0)
-    logger.info("Removed XDP Program from Kernel.")
 
 # Credit to Joel Sommers
 def _set_bpf_jumptable(bpf, tablename, idx, fnname, progtype):

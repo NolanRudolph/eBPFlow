@@ -40,14 +40,15 @@ typedef struct flow_attrs
   __be16 dst_port;
 } flow_attrs;
 
-typedef struct flow_accums
+typedef struct flow_accms
 {
   uint64_t packets;
   uint64_t bytes;
-} flow_accums;
+} flow_accms;
   
 /* BPF MAPS */
-BPF_HASH(flows, struct flow_attrs, struct flow_accums, 1000);
+//BPF_HASH(flows, struct flow_attrs, struct flow_accms, 1000);
+BPF_TABLE("percpu_hash", struct flow_attrs, struct flow_accms, flows, 65536);
 BPF_PROG_ARRAY(parse_layer3, 7);
 
 /* CODE */
@@ -166,9 +167,9 @@ int parse_ipv4(struct xdp_md *ctx)
 
   uint64_t bs = bytes;
 
-  flow_accums ins_acc = {1, bytes};
-  flow_accums upd_acc = {0, 0};
-  flow_accums *flow_ptr = flows.lookup_or_try_init(&p, &ins_acc);
+  flow_accms ins_acc = {1, bytes};
+  flow_accms upd_acc = {0, 0};
+  flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &ins_acc);
 
   if (flow_ptr)
   {
@@ -253,9 +254,9 @@ int parse_ipv6(struct xdp_md *ctx)
     return XDP_DROP;
   }
 
-  flow_accums ins_acc = {1, bytes};
-  flow_accums upd_acc = {0, 0};
-  flow_accums *flow_ptr = flows.lookup_or_try_init(&p, &ins_acc);
+  flow_accms ins_acc = {1, bytes};
+  flow_accms upd_acc = {0, 0};
+  flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &ins_acc);
 
   if (flow_ptr)
   {
