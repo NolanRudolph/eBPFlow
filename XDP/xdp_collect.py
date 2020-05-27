@@ -83,8 +83,8 @@ def main(args):
     try:
         all_flows = flows.items()
         all_flows_len = len(all_flows)
-        logger.info("SOURCE IP, DEST IP,  S_PORT, D_PORT, E_TYPE, PROTO")
-        f.write("SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO\n")
+        logger.debug("SOURCE IP, DEST IP,  S_PORT, D_PORT, E_TYPE, PROTO, # BYTES, # PACKETS")
+        f.write("SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO, #BYTES, #PACKETS\n")
         for i in range(0, all_flows_len):
             attrs = all_flows[i][0]
             accms = all_flows[i][1]
@@ -100,8 +100,10 @@ def main(args):
                 dst_ip = ipaddress.ipv6_address(ntohl(attrs.dst_ip))
             src_p = ntohs(attrs.src_port)
             dst_p = ntohs(attrs.dst_port)
-            logger.info("New Flow: {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), l4_proto))
-            f.write("{},{},{},{},{},{}\n".format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), l4_proto))
+            n_packets = accms.packets
+            n_bytes = accms.bytes
+            logger.debug("New Flow: {}, {}, {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), l4_proto, n_packets, n_bytes))
+            f.write("{},{},{},{},{},{},{},{}\n".format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), l4_proto, n_packets, n_bytes))
     except ValueError:
         logger.error("VALUE ERROR")
 
