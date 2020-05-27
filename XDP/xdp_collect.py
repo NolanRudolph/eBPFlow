@@ -29,13 +29,14 @@ ETH_IP = 14
 ETH_VLAN = 4
 TCP = 20
 UDP = 8
-CPUS = os.cpu_count()
+CPU_COUNT = os.cpu_count()
 
 # Main #
 def main(args):
     # User argument handling
     loglevel = logging.INFO
     run_time = 5
+    agg_time = 60
     out_file = "flows.csv"
     if args.debug:
         loglevel = logging.DEBUG
@@ -43,6 +44,8 @@ def main(args):
         run_time = args.time
     if args.output:
         out_file = args.output
+    if args.aggregate:
+        agg_time = args.aggregate
 
     # Logger stuff
     logging.basicConfig(level=loglevel, 
@@ -53,9 +56,16 @@ def main(args):
     IF = args.interface
     logger.info("Using interface %s" % IF)
 
+    # CFlags for eBPF compile
+    _cflags = []
+    _cflags.append("-DSTART=" + str(time.time()))
+    _cflags.append("-DAGG=" + str(agg_time))
+
     # Compile and load the required source C file
     logger.debug("Loading xdp_collect.c...")
-    bpf = BPF(src_file="xdp_collect.c", debug=bcc.DEBUG_SOURCE | bcc.DEBUG_BPF)
+    bpf = BPF(src_file="xdp_collect.c", \
+              cflags=_cflags, \
+              debug=bcc.DEBUG_SOURCE | bcc.DEBUG_BPF)
 
     # Get the main function
     logger.debug("Loading function xdp_parser()...")
@@ -86,8 +96,8 @@ def main(args):
         all_vals = flows.values()
         all_flows_len = len(all_flows)
 
-        logger.debug("SOURCE IP, DEST IP,  S_PORT, D_PORT, E_TYPE, PROTO, #PACKETS, #BYTES")
-        f.write("SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO, #PACKETS, #BYTES\n")
+        logger.debug("START, END, SOURCE IP, DEST IP,S_PORT, D_PORT, E_TYPE, PROTO, #PACKETS, #BYTES")
+        f.write("START, END, SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO, #PACKETS, #BYTES\n")
 
         # Writing to CSV + Debugging
         for i in range(0, all_flows_len):
@@ -98,9 +108,15 @@ def main(args):
             # Get accumulation variables over all CPUs
             n_packets = 0
             n_bytes = 0
-            for j in range(0, CPUS):
+            start = 0
+            end = 0
+            for j in range(0, CPU_COUNT):
                 n_packets += all_flows[i][1][j].packets
                 n_bytes += all_flows[i][1][j].bytes
+                if all_flows[i][1][j].start != 0:
+                    start = all_flows[i][1][j].start
+                if all_flows[i][1][j].end != 0:
+                    end = all_flows[i][1][j].end
 
             l2_proto = attrs.l2_proto
             l4_proto = attrs.l4_proto
@@ -119,11 +135,11 @@ def main(args):
             src_p = ntohs(attrs.src_port)
             dst_p = ntohs(attrs.dst_port)
 
-            logger.debug("New Flow: {}, {}, {}, {}, {}, {}, {}, {}" \
-                   .format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
+            logger.debug("New Flow: {}, {}, {}, {}, {}, {}, {}, {}, {}, {}" \
+                   .format(start, end, src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
                            l4_proto, n_packets, n_bytes))
-            f.write("{},{},{},{},{},{},{},{}\n"\
-              .format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
+            f.write("{},{},{},{},{},{},{},{},{},{}\n"\
+              .format(start, end, src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
                       l4_proto, n_packets, n_bytes))
     finally:
         bpf.remove_xdp(IF, 0)
@@ -146,12 +162,14 @@ def _set_bpf_jumptable(bpf, tablename, idx, fnname, progtype):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--interface", required=True, type=str,
-                        help="Specify which network interface to listen for packets on")
-    parser.add_argument("-d", "--debug", default=False, required=False, action="store_true",
-                        help="Allow debug logging")
+                        help="Specify which interface to listen for packets on")
     parser.add_argument("-t", "--time", default=5, required=False, type=int, 
-                        help="Time to run in seconds (default = 5)")
+                        help="Time to run (s) [default = 5]")
+    parser.add_argument("-a", "--aggregate", default=60, required=False, type=int,
+                        help="Aggregation time (s) to close flows [default = 60]")
     parser.add_argument("-o", "--output", default="flows.csv", required=False, type=str,
                         help="Name of file to output flows in CSV format")
+    parser.add_argument("-d", "--debug", default=False, required=False, action="store_true",
+                        help="Allow debug logging")
     args = parser.parse_args()
     main(args)
