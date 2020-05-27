@@ -99,9 +99,6 @@ def main(args):
         all_vals = flows.values()
         all_flows_len = len(all_flows)
 
-        logger.debug("START, END, SOURCE IP, DEST IP,S_PORT, D_PORT, E_TYPE, PROTO, #PACKETS, #BYTES")
-        f.write("START, END, SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO, #PACKETS, #BYTES\n")
-
         # This set will hold all flows to sort
         flow_set = set()
 
@@ -141,6 +138,7 @@ def main(args):
             src_p = ntohs(attrs.src_port)
             dst_p = ntohs(attrs.dst_port)
 
+            logger.debug("START, END, SOURCE IP, DEST IP,S_PORT, D_PORT, E_TYPE, PROTO, #PACKETS, #BYTES")
             logger.debug("New Flow: {}, {}, {}, {}, {}, {}, {}, {}, {}, {}" \
                    .format(start, end, src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
                            l4_proto, n_packets, n_bytes))
@@ -157,6 +155,7 @@ def main(args):
     f.close()
 
     f = open(out_file, "r+")
+    f.write("START, END, SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO, #PACKETS, #BYTES\n")
     for entry in s_flow_set:
         print(entry.strip())
         f.write(entry)
