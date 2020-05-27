@@ -72,38 +72,56 @@ def main(args):
     for i, fn in [(4, "parse_ipv4"), (6, "parse_ipv6")]:
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
-    # Main flow collecting segment (Basically sleep)
+    # Main flow collecting segment (Basically sleep, but time.sleep() is janky)
     while abs(time.time() - begin) < run_time:
         logger.info("*** COLLECTING FOR %ss ***" % run_time)
 
     # Retrieve the main table that is saturated by xdp_collect.c
     flows = bpf.get_table("flows")
 
-    f = open(out_file, "w+")
     try:
+        # File to write to
+        f = open(out_file, "w+")
+        
+        # Retrive individual items as list
         all_flows = flows.items()
         all_flows_len = len(all_flows)
-        logger.debug("SOURCE IP, DEST IP,  S_PORT, D_PORT, E_TYPE, PROTO, # BYTES, # PACKETS")
-        f.write("SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO, #BYTES, #PACKETS\n")
+
+        logger.debug("SOURCE IP, DEST IP,  S_PORT, D_PORT, E_TYPE, PROTO, #PACKETS, #BYTES")
+        f.write("SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO, #PACKETS, #BYTES\n")
+
+        # Writing to CSV + Debugging
         for i in range(0, all_flows_len):
+            # Key: Attributes | Val: Accumulators
             attrs = all_flows[i][0]
             accms = all_flows[i][1]
+
             l2_proto = attrs.l2_proto
             l4_proto = attrs.l4_proto
             src_ip = ""
             dst_ip = ""
+
+            # Parse IP addresses according to ethertype (EIP4 / EIP6)
             if l2_proto == 0x0800:
                 src_ip = ipaddress.ip_address(ntohl(attrs.src_ip))
                 dst_ip = ipaddress.ip_address(ntohl(attrs.dst_ip))
             elif l2_proto == 0x8100:
                 src_ip = ipaddress.ipv6_address(ntohl(attrs.src_ip))
                 dst_ip = ipaddress.ipv6_address(ntohl(attrs.dst_ip))
+
+            # Port requires little endian conversion
             src_p = ntohs(attrs.src_port)
             dst_p = ntohs(attrs.dst_port)
+
             n_packets = accms.packets
             n_bytes = accms.bytes
-            logger.debug("New Flow: {}, {}, {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), l4_proto, n_packets, n_bytes))
-            f.write("{},{},{},{},{},{},{},{}\n".format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), l4_proto, n_packets, n_bytes))
+
+            logger.debug("New Flow: {}, {}, {}, {}, {}, {}, {}, {}" \
+                   .format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
+                           l4_proto, n_packets, n_bytes))
+            f.write("{},{},{},{},{},{},{},{}\n"\
+              .format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
+                      l4_proto, n_packets, n_bytes))
     except ValueError:
         logger.error("VALUE ERROR")
 

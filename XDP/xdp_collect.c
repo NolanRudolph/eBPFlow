@@ -117,12 +117,17 @@ int parse_ipv4(struct xdp_md *ctx)
   struct iphdr *iph = (struct iphdr *)(data + offset);
   offset += sizeof(struct iphdr);
 
-  u_short proto = iph -> protocol;
+  // # of bytes for accumulator variables
+  uint16_t bytes = 0;
 
-  // Store L2 + L3 Protocol, src_ip, and dst_ip
+  // Store L2 + L3 Protocol, src_ip, dst_ip, and #bytes
   p.l2_proto = ETH_P_IP;
   __builtin_memcpy(&p.src_ip, &(iph -> saddr), sizeof(__be32));
   __builtin_memcpy(&p.dst_ip, &(iph -> daddr), sizeof(__be32));
+  __builtin_memcpy(&bytes, &(iph -> tot_len), sizeof(uint16_t));
+
+  // Get L4 protocol
+  u_short proto = iph -> protocol;
 
   // Put layer 4 attributes in flow_attrs
   if (proto == ICMP && (data + offset + sizeof(struct icmphdr) < data_end))
@@ -159,31 +164,23 @@ int parse_ipv4(struct xdp_md *ctx)
     return XDP_DROP;
   }
 
-  /*
-  int first = 0;
-  int key = 0;
-  int *key_p = cur_key.lookup_or_try_init(&first, &first);
+  uint64_t bs = bytes;
 
-  if (key_p)
-  {
-    __builtin_memcpy(&key, key_p, sizeof(int));
-    *key_p += 1;
-  }
-  */
-
-  flow_accums def_acc = {1, 0};
+  flow_accums ins_acc = {1, bytes};
   flow_accums upd_acc = {0, 0};
-  flow_accums *flow_ptr = flows.lookup_or_try_init(&p, &def_acc);
+  flow_accums *flow_ptr = flows.lookup_or_try_init(&p, &ins_acc);
 
   if (flow_ptr)
   {
     __builtin_memcpy(&upd_acc.packets, &(flow_ptr -> packets), sizeof(uint64_t));
+    __builtin_memcpy(&upd_acc.bytes, &(flow_ptr -> bytes), sizeof(uint64_t));
     ++upd_acc.packets;
+    upd_acc.bytes += bytes;
     flows.update(&p, &upd_acc); 
   }
   else
   {
-    flows.insert(&p, &def_acc);
+    flows.insert(&p, &ins_acc);
   }
   return XDP_PASS;
 }
@@ -209,12 +206,16 @@ int parse_ipv6(struct xdp_md *ctx)
   struct ipv6hdr *ip6h = (struct ipv6hdr *)(data + offset);
   offset += sizeof(struct ipv6hdr);
 
-  u_short proto = ip6h -> nexthdr;
+  // # of bytes for accumulator variables
+  uint16_t bytes = 0;
 
   // Store L2 + L3 Protocol, src_ip, and dst_ip
   p.l2_proto = ETH_P_IPV6;
   __builtin_memcpy(&p.src_ip, &(ip6h -> saddr), sizeof(__be32));
   __builtin_memcpy(&p.dst_ip, &(ip6h -> daddr), sizeof(__be32));
+
+  // Get L4 Protocol
+  u_short proto = ip6h -> nexthdr;
 
   // Put layer 4 attributes in flow_attrs
   if (proto == ICMP && (data + offset + sizeof(struct icmphdr) < data_end))
@@ -252,33 +253,20 @@ int parse_ipv6(struct xdp_md *ctx)
     return XDP_DROP;
   }
 
-  /*
-  int first = 0;
-  int key = 0;
-  int next_key = 0;
-  int *key_p = cur_key.lookup_or_try_init(&first, &first);
-
-  if (key_p)
-  {
-    __builtin_memcpy(&key, key_p, sizeof(int));
-    *key_p += 1;
-  }
-  flows.insert(&key, &p);
-  */
-
-  flow_accums def_acc = {1, 0};
+  flow_accums ins_acc = {1, bytes};
   flow_accums upd_acc = {0, 0};
-  flow_accums *flow_ptr = flows.lookup_or_try_init(&p, &def_acc);
+  flow_accums *flow_ptr = flows.lookup_or_try_init(&p, &ins_acc);
 
   if (flow_ptr)
   {
     __builtin_memcpy(&upd_acc.packets, &(flow_ptr -> packets), sizeof(uint64_t));
     ++upd_acc.packets;
+    upd_acc.bytes += bytes;
     flows.update(&p, &upd_acc); 
   }
   else
   {
-    flows.insert(&p, &def_acc);
+    flows.insert(&p, &ins_acc);
   }
   return XDP_PASS;
 }
