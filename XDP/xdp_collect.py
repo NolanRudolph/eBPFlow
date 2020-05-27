@@ -102,6 +102,7 @@ def main(args):
         # This set will hold all flows to sort
         flow_set = set()
 
+        logger.debug("START, END, SOURCE IP, DEST IP,S_PORT, D_PORT, E_TYPE, PROTO, #PACKETS, #BYTES")
         # Writing to CSV + Debugging
         for i in range(0, all_flows_len):
             # Key: Attributes | Val: Accumulators
@@ -138,7 +139,6 @@ def main(args):
             src_p = ntohs(attrs.src_port)
             dst_p = ntohs(attrs.dst_port)
 
-            logger.debug("START, END, SOURCE IP, DEST IP,S_PORT, D_PORT, E_TYPE, PROTO, #PACKETS, #BYTES")
             logger.debug("New Flow: {}, {}, {}, {}, {}, {}, {}, {}, {}, {}" \
                    .format(start, end, src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
                            l4_proto, n_packets, n_bytes))
