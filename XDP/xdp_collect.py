@@ -59,7 +59,6 @@ def main(args):
 
     # CFlags for eBPF compile
     _cflags = []
-    _cflags.append("-DSTART=" + str(time.time()))
     _cflags.append("-DAGG=" + str(agg_time))
 
     # Compile and load the required source C file
@@ -79,14 +78,17 @@ def main(args):
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
     logger.info("*** COLLECTING FOR %ss ***" % run_time)
-    begin = time.time()
+
+    time_table = bpf.get_table("start_time")
 
     # Main flow collecting segment (Basically sleep, but time.sleep() is janky)
+    begin = time.time()
     while abs(time.time() - begin) < run_time:
         logger.debug("*** COLLECTING FOR %ss ***" % run_time)
 
     # Retrieve the main table that is saturated by xdp_collect.c
     flows = bpf.get_table("flows")
+    capture_start = time_table[0].value
 
     try:
         # File to write to
@@ -115,9 +117,9 @@ def main(args):
                 n_packets += all_flows[i][1][j].packets
                 n_bytes += all_flows[i][1][j].bytes
                 if all_flows[i][1][j].start != 0:
-                    start = all_flows[i][1][j].start
+                    start = (all_flows[i][1][j].start - capture_start) / 1e9
                 if all_flows[i][1][j].end != 0:
-                    end = all_flows[i][1][j].end
+                    end = (all_flows[i][1][j].end - capture_start) / 1e9
 
             l2_proto = attrs.l2_proto
             l4_proto = attrs.l4_proto

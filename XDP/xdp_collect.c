@@ -46,6 +46,7 @@ typedef struct flow_accms
 } flow_accms;
 
 /* BPF MAPS */
+BPF_ARRAY(start_time, u64, 1);
 BPF_TABLE("percpu_hash", struct flow_attrs, struct flow_accms, flows, 65536);
 BPF_PROG_ARRAY(parse_layer3, 7);
 
@@ -166,6 +167,7 @@ int parse_ipv4(struct xdp_md *ctx)
   u64 now = bpf_ktime_get_ns();
   flow_accms accms = {0, 0, 0, 0};
   flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &accms);
+  int key = 0;
 
   if (flow_ptr)
   {
@@ -198,6 +200,12 @@ int parse_ipv4(struct xdp_md *ctx)
       {
         accms.start = now;
       }
+
+      // Start time for front end
+      u64 *ret = start_time.lookup(&key);
+      if (ret && *ret == 0)
+        start_time.update(&key, &now);
+
       // All flows constantly update their end attribute until aggregation
       accms.end = now;
 
@@ -300,4 +308,3 @@ int parse_ipv6(struct xdp_md *ctx)
   */
   return XDP_PASS;
 }
-
