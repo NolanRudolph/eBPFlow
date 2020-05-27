@@ -30,7 +30,7 @@
 /* TYPEDEFS */
 typedef unsigned char u_char;
 
-typedef struct packet_attrs
+typedef struct flow_attrs
 {
   uint16_t l2_proto;
   uint8_t l4_proto;
@@ -38,12 +38,16 @@ typedef struct packet_attrs
   __be32 dst_ip;
   __be16 src_port;
   __be16 dst_port;
-} packet_attrs;
+} flow_attrs;
 
-
+typedef struct flow_accums
+{
+  uint64_t packets;
+  uint64_t bytes;
+} flow_accums;
+  
 /* BPF MAPS */
-BPF_ARRAY(cur_key, int, 1000);
-BPF_HASH(flows, int, struct packet_attrs, 1000);
+BPF_HASH(flows, struct flow_attrs, struct flow_accums, 1000);
 BPF_PROG_ARRAY(parse_layer3, 7);
 
 /* CODE */
@@ -96,7 +100,7 @@ int xdp_parser(struct xdp_md *ctx)
 int parse_ipv4(struct xdp_md *ctx) 
 {
   // Packet to store in hash
-  packet_attrs p = {0, 0, 0, 0, 0, 0};
+  flow_attrs p = {0, 0, 0, 0, 0, 0};
 
   // Offset for memory boundary checks
   int offset = sizeof(struct ethhdr);
@@ -120,7 +124,7 @@ int parse_ipv4(struct xdp_md *ctx)
   __builtin_memcpy(&p.src_ip, &(iph -> saddr), sizeof(__be32));
   __builtin_memcpy(&p.dst_ip, &(iph -> daddr), sizeof(__be32));
 
-  // Put layer 4 attributes in packet_attrs
+  // Put layer 4 attributes in flow_attrs
   if (proto == ICMP && (data + offset + sizeof(struct icmphdr) < data_end))
   {
     struct icmphdr *icmph = (struct icmphdr *)(data + offset);
@@ -155,9 +159,9 @@ int parse_ipv4(struct xdp_md *ctx)
     return XDP_DROP;
   }
 
+  /*
   int first = 0;
   int key = 0;
-  int next_key = 0;
   int *key_p = cur_key.lookup_or_try_init(&first, &first);
 
   if (key_p)
@@ -165,8 +169,22 @@ int parse_ipv4(struct xdp_md *ctx)
     __builtin_memcpy(&key, key_p, sizeof(int));
     *key_p += 1;
   }
+  */
 
-  flows.insert(&key, &p);
+  flow_accums def_acc = {1, 0};
+  flow_accums upd_acc = {0, 0};
+  flow_accums *flow_ptr = flows.lookup_or_try_init(&p, &def_acc);
+
+  if (flow_ptr)
+  {
+    __builtin_memcpy(&upd_acc.packets, &(flow_ptr -> packets), sizeof(uint64_t));
+    ++upd_acc.packets;
+    flows.update(&p, &upd_acc); 
+  }
+  else
+  {
+    flows.insert(&p, &def_acc);
+  }
   return XDP_PASS;
 }
 
@@ -174,7 +192,7 @@ int parse_ipv4(struct xdp_md *ctx)
 int parse_ipv6(struct xdp_md *ctx)
 {
   // Packet to store in hash
-  packet_attrs p = {0, 0, 0, 0, 0, 0};
+  flow_attrs p = {0, 0, 0, 0, 0, 0};
 
   // Offset for memory boundary checks
   int offset = sizeof(struct ethhdr);
@@ -198,7 +216,7 @@ int parse_ipv6(struct xdp_md *ctx)
   __builtin_memcpy(&p.src_ip, &(ip6h -> saddr), sizeof(__be32));
   __builtin_memcpy(&p.dst_ip, &(ip6h -> daddr), sizeof(__be32));
 
-  // Put layer 4 attributes in packet_attrs
+  // Put layer 4 attributes in flow_attrs
   if (proto == ICMP && (data + offset + sizeof(struct icmphdr) < data_end))
   {
     struct icmphdr *icmph = (struct icmphdr *)(data + offset);
@@ -234,6 +252,7 @@ int parse_ipv6(struct xdp_md *ctx)
     return XDP_DROP;
   }
 
+  /*
   int first = 0;
   int key = 0;
   int next_key = 0;
@@ -244,8 +263,23 @@ int parse_ipv6(struct xdp_md *ctx)
     __builtin_memcpy(&key, key_p, sizeof(int));
     *key_p += 1;
   }
-
   flows.insert(&key, &p);
+  */
+
+  flow_accums def_acc = {1, 0};
+  flow_accums upd_acc = {0, 0};
+  flow_accums *flow_ptr = flows.lookup_or_try_init(&p, &def_acc);
+
+  if (flow_ptr)
+  {
+    __builtin_memcpy(&upd_acc.packets, &(flow_ptr -> packets), sizeof(uint64_t));
+    ++upd_acc.packets;
+    flows.update(&p, &upd_acc); 
+  }
+  else
+  {
+    flows.insert(&p, &def_acc);
+  }
   return XDP_PASS;
 }
 

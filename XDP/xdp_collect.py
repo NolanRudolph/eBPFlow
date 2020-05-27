@@ -72,9 +72,9 @@ def main(args):
     for i, fn in [(4, "parse_ipv4"), (6, "parse_ipv6")]:
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
-    # Main flow collecting segment
+    # Main flow collecting segment (Basically sleep)
     while abs(time.time() - begin) < run_time:
-        print("*** COLLECTING ***")
+        logger.info("*** COLLECTING FOR %ss ***" % run_time)
 
     # Retrieve the main table that is saturated by xdp_collect.c
     flows = bpf.get_table("flows")
@@ -86,19 +86,20 @@ def main(args):
         logger.info("SOURCE IP, DEST IP,  S_PORT, D_PORT, E_TYPE, PROTO")
         f.write("SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO\n")
         for i in range(0, all_flows_len):
-            cur_flow = all_flows[i][1]
-            l2_proto = cur_flow.l2_proto
-            l4_proto = cur_flow.l4_proto
+            attrs = all_flows[i][0]
+            accms = all_flows[i][1]
+            l2_proto = attrs.l2_proto
+            l4_proto = attrs.l4_proto
             src_ip = ""
             dst_ip = ""
             if l2_proto == 0x0800:
-                src_ip = ipaddress.ip_address(ntohl(cur_flow.src_ip))
-                dst_ip = ipaddress.ip_address(ntohl(cur_flow.dst_ip))
+                src_ip = ipaddress.ip_address(ntohl(attrs.src_ip))
+                dst_ip = ipaddress.ip_address(ntohl(attrs.dst_ip))
             elif l2_proto == 0x8100:
-                src_ip = ipaddress.ipv6_address(ntohl(cur_flow.src_ip))
-                dst_ip = ipaddress.ipv6_address(ntohl(cur_flow.dst_ip))
-            src_p = ntohs(cur_flow.src_port)
-            dst_p = ntohs(cur_flow.dst_port)
+                src_ip = ipaddress.ipv6_address(ntohl(attrs.src_ip))
+                dst_ip = ipaddress.ipv6_address(ntohl(attrs.dst_ip))
+            src_p = ntohs(attrs.src_port)
+            dst_p = ntohs(attrs.dst_port)
             logger.info("New Flow: {}, {}, {}, {}, {}, {}".format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), l4_proto))
             f.write("{},{},{},{},{},{}\n".format(src_ip, dst_ip, src_p, dst_p, hex(l2_proto), l4_proto))
     except ValueError:
