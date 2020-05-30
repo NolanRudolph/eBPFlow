@@ -21,6 +21,7 @@ import argparse, logging
 import os, sys, time
 from socket import inet_ntoa, ntohl, ntohs
 import ipaddress
+from random import randint
 
 # Global Variables #
 
@@ -30,6 +31,23 @@ ETH_VLAN = 4
 TCP = 20
 UDP = 8
 CPU_COUNT = os.cpu_count()
+key = 0
+val = 1
+u32 = 2**32
+cached_flows = []
+
+class CacheFlow:
+    def __init__(self, start, end, s_ip, d_ip, s_port, d_port, e_type, proto, ps, bs):
+        self.start = start
+        self.end = end
+        self.s_ip = s_ip
+        self.d_ip = d_ip
+        self.s_port = s_port
+        self.d_port = d_port
+        self.e_type = e_type
+        self.proto = proto
+        self.packets = ps
+        self.bytes = bs
 
 # Main #
 def main(args):
@@ -46,6 +64,9 @@ def main(args):
         out_file = args.output
     if args.aggregate:
         agg_time = args.aggregate
+
+    assert agg_time < run_time, "-a argument must be less than -t"
+    agg_time_s = agg_time
     agg_time *= 1e9
 
     # Logger stuff
@@ -70,6 +91,7 @@ def main(args):
     # Get the main function
     logger.debug("Loading function xdp_parser()...")
     fn = bpf.load_func("xdp_parser", BPF.XDP)
+    # Attach the flow collector
     logger.debug("Attaching xdp_parser() to kernel hook...")
     bpf.attach_xdp(IF, fn, 0)
 
@@ -77,14 +99,46 @@ def main(args):
     for i, fn in [(4, "parse_ipv4"), (6, "parse_ipv6")]:
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
-    logger.info("*** COLLECTING FOR %ss ***" % run_time)
-
+    # 'time_table' holds epoch time of first flow from XDP
+    # 'py_start' holds epoch time of something else, but only matters for while loop
     time_table = bpf.get_table("start_time")
+    py_start = time.time()
 
-    # Main flow collecting segment (Basically sleep, but time.sleep() is janky)
-    begin = time.time()
-    while abs(time.time() - begin) < run_time:
-        logger.debug("*** COLLECTING FOR %ss ***" % run_time)
+    # Main flow collecting segment (Garbage Collector)
+    logger.info("*** COLLECTING FOR %ss ***" % run_time)
+    flows = bpf.get_table("flows")
+    while abs(time.time() - py_start) < run_time:
+        logger.info("*** COLLECTING FOR %ss ***" % run_time)
+        xdp_start = time_table[0].value
+        cur_flows = flows.items()
+        cur_flows_len = len(cur_flows)
+
+        # Loop through all recording flows
+        for i in range(0, cur_flows_len):
+            attrs = cur_flows[i][key]
+            accms = cur_flows[i][val]  # accms[j] means "accumlators on cpu j"
+            recent_stamp = 0
+            # Loop through all CPUs
+            for j in range(0, CPU_COUNT):
+                # This flow is already cached
+                if (attrs.store_id != 0):
+                    break
+                # Does this CPU contain the end timestamp
+                if (accms[j].end != 0):
+                    recent_stamp = accms[j].end if accms[j].end > recent_stamp else recent_stamp
+
+            if recent_stamp != 0:
+                xdp_t = (accms[j].end - xdp_start) / 1e9
+                py_t = (time.time() - py_start)
+                idle_time = py_t - xdp_t
+                # Cache the flow since idle time > agg time
+                if idle_time > agg_time_s:
+                    logger.debug("Caching flow")
+                    accms = flows.__getitem__(attrs)
+                    flows.__delitem__(attrs)
+                    attrs.store_id = randint(1, u32)
+                    flows.__setitem__(attrs, accms)
+                    break
 
     # Retrieve the main table that is saturated by xdp_collect.c
     flows = bpf.get_table("flows")
@@ -102,12 +156,10 @@ def main(args):
         # This set will hold all flows to sort
         flow_set = set()
 
-        logger.debug("START, END, SOURCE IP, DEST IP,S_PORT, D_PORT, E_TYPE, PROTO, #PACKETS, #BYTES")
         # Writing to CSV + Debugging
         for i in range(0, all_flows_len):
             # Key: Attributes | Val: Accumulators
-            attrs = all_flows[i][0]
-            accms = all_flows[i][1]
+            attrs = all_flows[i][key]
 
             # Get accumulation variables over all CPUs
             n_packets = 0
@@ -115,12 +167,13 @@ def main(args):
             start = 0
             end = 0
             for j in range(0, CPU_COUNT):
-                n_packets += all_flows[i][1][j].packets
-                n_bytes += all_flows[i][1][j].bytes
-                if all_flows[i][1][j].start != 0:
-                    start = (all_flows[i][1][j].start - capture_start) / 1e9
-                if all_flows[i][1][j].end != 0:
-                    end = (all_flows[i][1][j].end - capture_start) / 1e9
+                accms = all_flows[i][val][j]
+                n_packets += accms.packets
+                n_bytes += accms.bytes
+                if accms.start != 0:
+                    start = (accms.start - capture_start) / 1e9
+                if accms.end != 0:
+                    end = (accms.end - capture_start) / 1e9
 
             l2_proto = attrs.l2_proto
             l4_proto = attrs.l4_proto
@@ -139,9 +192,6 @@ def main(args):
             src_p = ntohs(attrs.src_port)
             dst_p = ntohs(attrs.dst_port)
 
-            logger.debug("New Flow: {}, {}, {}, {}, {}, {}, {}, {}, {}, {}" \
-                   .format(start, end, src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
-                           l4_proto, n_packets, n_bytes))
             flow_set.add("{},{},{},{},{},{},{},{},{},{}\n"\
                       .format(start, end, src_ip, dst_ip, src_p, dst_p, hex(l2_proto), \
                               l4_proto, n_packets, n_bytes))
@@ -151,16 +201,18 @@ def main(args):
         logger.info("Removed XDP Program from Kernel.")
 
     # Final touch ups to CSV
+    logger.info("Sorting CSV file...")
     s_flow_set = sorted(flow_set, key=lambda x:float(x[:x.find(',')]))
     f.close()
 
     f = open(out_file, "r+")
     f.write("START, END, SRC IP, DST IP, SRC PORT, DST PORT, ETHER TYPE, PROTO, #PACKETS, #BYTES\n")
     for entry in s_flow_set:
-        print(entry.strip())
         f.write(entry)
 
     f.close()
+
+    logger.info("Finished!")
 
 
 # Credit to Joel Sommers

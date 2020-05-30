@@ -171,6 +171,7 @@ int parse_ipv4(struct xdp_md *ctx)
 
   if (flow_ptr)
   {
+    /*
     // Store if above aggregation time (i.e. set ID field)
     if (now - (flow_ptr -> start) > AGG && (flow_ptr -> start) != 0)
     {
@@ -182,35 +183,29 @@ int parse_ipv4(struct xdp_md *ctx)
       // Remove the old flow
       flows.delete(&p);
 
-      // Generate a unique Store ID
-      p.store_id = bpf_get_prandom_u32();
-
       // Insert the old flow under a new ID - no longer edited
       flows.insert(&p, &accms);
     }
-    else
+    */
+    // Update / insert the flow
+    __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
+    ++accms.packets;
+    accms.bytes += bytes;
+
+    // First flow gets start attribute set
+    if (flow_ptr -> start == 0)
     {
-      // Update the flow otherwise
-      __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
-      ++accms.packets;
-      accms.bytes += bytes;
-
-      // First flow gets start attribute set
-      if (flow_ptr -> start == 0)
-      {
-        accms.start = now + 1;
-      }
-
-      // Start time for front end
-      u64 *ret = start_time.lookup(&key);
-      if (ret && *ret == 0)
-        start_time.update(&key, &now);
-
-      // All flows constantly update their end attribute until aggregation
-      accms.end = now;
-
-      flows.update(&p, &accms); 
+      accms.start = now + 1;
     }
+    // All flows constantly update their end attribute until aggregation
+    accms.end = now + 1;
+
+    // Start time for front end
+    u64 *ret = start_time.lookup(&key);
+    if (ret && *ret == 0)
+      start_time.update(&key, &now);
+
+    flows.update(&p, &accms); 
   }
   else
   {
@@ -304,9 +299,6 @@ int parse_ipv6(struct xdp_md *ctx)
 
       // Remove the old flow
       flows.delete(&p);
-
-      // Generate a unique Store ID
-      p.store_id = bpf_get_prandom_u32();
 
       // Insert the old flow under a new ID - no longer edited
       flows.insert(&p, &accms);
