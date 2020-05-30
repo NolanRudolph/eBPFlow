@@ -36,18 +36,6 @@ val = 1
 u32 = 2**32
 cached_flows = []
 
-class CacheFlow:
-    def __init__(self, start, end, s_ip, d_ip, s_port, d_port, e_type, proto, ps, bs):
-        self.start = start
-        self.end = end
-        self.s_ip = s_ip
-        self.d_ip = d_ip
-        self.s_port = s_port
-        self.d_port = d_port
-        self.e_type = e_type
-        self.proto = proto
-        self.packets = ps
-        self.bytes = bs
 
 # Main #
 def main(args):
@@ -91,6 +79,7 @@ def main(args):
     # Get the main function
     logger.debug("Loading function xdp_parser()...")
     fn = bpf.load_func("xdp_parser", BPF.XDP)
+
     # Attach the flow collector
     logger.debug("Attaching xdp_parser() to kernel hook...")
     bpf.attach_xdp(IF, fn, 0)
@@ -99,58 +88,57 @@ def main(args):
     for i, fn in [(4, "parse_ipv4"), (6, "parse_ipv6")]:
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
-    # 'time_table' holds epoch time of first flow from XDP
+    # 'time_wizard' holds epoch time of first flow from XDP
     # 'py_start' holds epoch time of something else, but only matters for while loop
-    time_table = bpf.get_table("start_time")
+    time_wizard = bpf.get_table("times")
     py_start = time.time()
 
     # Main flow collecting segment (Garbage Collector)
     logger.info("*** COLLECTING FOR %ss ***" % run_time)
     flows = bpf.get_table("flows")
+    cache = bpf.get_table("cache")
     while abs(time.time() - py_start) < run_time:
-        logger.info("*** COLLECTING FOR %ss ***" % run_time)
-        xdp_start = time_table[0].value
+        xdp_start = time_wizard[0].value
         cur_flows = flows.items()
         cur_flows_len = len(cur_flows)
+        old_flows = []
 
         # Loop through all recording flows
         for i in range(0, cur_flows_len):
             attrs = cur_flows[i][key]
             accms = cur_flows[i][val]  # accms[j] means "accumlators on cpu j"
             recent_stamp = 0
-            # Loop through all CPUs
+
+            # Loop through all CPUs and find most recent timestamp
             for j in range(0, CPU_COUNT):
-                # This flow is already cached
-                if (attrs.store_id != 0):
-                    break
-                # Does this CPU contain the end timestamp
                 if (accms[j].end != 0):
                     recent_stamp = accms[j].end if accms[j].end > recent_stamp else recent_stamp
 
-            if recent_stamp != 0:
-                xdp_t = (accms[j].end - xdp_start) / 1e9
-                py_t = (time.time() - py_start)
-                idle_time = py_t - xdp_t
-                # Cache the flow since idle time > agg time
-                if idle_time > agg_time_s:
-                    logger.debug("Caching flow")
-                    accms = flows.__getitem__(attrs)
-                    flows.__delitem__(attrs)
-                    attrs.store_id = randint(1, u32)
-                    flows.__setitem__(attrs, accms)
-                    break
+            # Cache flow if exceeding aggregation time
+            idle_time = (time_wizard[1].value - recent_stamp) / 1e9
+            if idle_time > agg_time_s:
+                old_flows.append(attrs)
+        
+        # Final loop to cleanup "flows" hashmap and populate "cache"
+        for flow in old_flows:
+            cache.__setitem__(flow, flows.__getitem__(flow))
+            flows.__delitem__(flow)
 
-    # Retrieve the main table that is saturated by xdp_collect.c
-    flows = bpf.get_table("flows")
-    capture_start = time_table[0].value
+    # Transfer remaining flows to cache
+    logger.info("Caching ongoing flows")
+    cur_flows = flows.items()
+    len_cur_flows = len(cur_flows)
+    for i in range(0, len_cur_flows):
+        attrs = cur_flows[i][key]
+        accms = cur_flows[i][val]
+        cache.__setitem__(attrs, accms)
 
     try:
         # File to write to
         f = open(out_file, "w+")
         
         # Retrive individual items as list
-        all_flows = flows.items()
-        all_vals = flows.values()
+        all_flows = cache.items()
         all_flows_len = len(all_flows)
 
         # This set will hold all flows to sort
@@ -171,9 +159,9 @@ def main(args):
                 n_packets += accms.packets
                 n_bytes += accms.bytes
                 if accms.start != 0:
-                    start = (accms.start - capture_start) / 1e9
+                    start = (accms.start - xdp_start) / 1e9
                 if accms.end != 0:
-                    end = (accms.end - capture_start) / 1e9
+                    end = (accms.end - xdp_start) / 1e9
 
             l2_proto = attrs.l2_proto
             l4_proto = attrs.l4_proto

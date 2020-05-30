@@ -34,7 +34,6 @@ typedef struct flow_attrs
   __be32 dst_ip;
   __be16 src_port;
   __be16 dst_port;
-  u32 store_id;
 } flow_attrs;
 
 typedef struct flow_accms
@@ -46,7 +45,8 @@ typedef struct flow_accms
 } flow_accms;
 
 /* BPF MAPS */
-BPF_ARRAY(start_time, u64, 1);
+BPF_ARRAY(times, u64, 2); // Index 1: Start time | Index 2: Latest time
+BPF_TABLE("percpu_hash", struct flow_attrs, struct flow_accms, cache, 65536);
 BPF_TABLE("percpu_hash", struct flow_attrs, struct flow_accms, flows, 65536);
 BPF_PROG_ARRAY(parse_layer3, 7);
 
@@ -100,7 +100,7 @@ int xdp_parser(struct xdp_md *ctx)
 int parse_ipv4(struct xdp_md *ctx) 
 {
   // Packet to store in hash
-  flow_attrs p = {0, 0, 0, 0, 0, 0, 0};
+  flow_attrs p = {0, 0, 0, 0, 0, 0};
 
   // Offset for memory boundary checks
   int offset = sizeof(struct ethhdr);
@@ -168,25 +168,10 @@ int parse_ipv4(struct xdp_md *ctx)
   flow_accms accms = {0, 0, 0, 0};
   flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &accms);
   int key = 0;
+  int key2 = 1;
 
   if (flow_ptr)
   {
-    /*
-    // Store if above aggregation time (i.e. set ID field)
-    if (now - (flow_ptr -> start) > AGG && (flow_ptr -> start) != 0)
-    {
-      __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
-      accms.end = now;
-      accms.packets++;
-      accms.bytes += bytes;
-
-      // Remove the old flow
-      flows.delete(&p);
-
-      // Insert the old flow under a new ID - no longer edited
-      flows.insert(&p, &accms);
-    }
-    */
     // Update / insert the flow
     __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
     ++accms.packets;
@@ -201,9 +186,11 @@ int parse_ipv4(struct xdp_md *ctx)
     accms.end = now + 1;
 
     // Start time for front end
-    u64 *ret = start_time.lookup(&key);
+    u64 *ret = times.lookup(&key);
     if (ret && *ret == 0)
-      start_time.update(&key, &now);
+      times.update(&key, &now);
+    else
+      times.update(&key2, &now);
 
     flows.update(&p, &accms); 
   }
@@ -286,46 +273,31 @@ int parse_ipv6(struct xdp_md *ctx)
   flow_accms accms = {0, 0, 0, 0};
   flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &accms);
   int key = 0;
+  int key2 = 1;
 
   if (flow_ptr)
   {
-    // Store if above aggregation time (i.e. set ID field)
-    if (now - (flow_ptr -> start) > AGG && (flow_ptr -> start) != 0)
+    // Update the flow otherwise
+    __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
+    ++accms.packets;
+    accms.bytes += bytes;
+
+    // First flow gets start attribute set
+    if (flow_ptr -> start == 0)
     {
-      __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
-      accms.end = now;
-      accms.packets++;
-      accms.bytes += bytes;
-
-      // Remove the old flow
-      flows.delete(&p);
-
-      // Insert the old flow under a new ID - no longer edited
-      flows.insert(&p, &accms);
+      accms.start = now + 1;
     }
+    // All flows constantly update their end attribute until aggregation
+    accms.end = now + 1;
+
+    // Start time for front end
+    u64 *ret = times.lookup(&key);
+    if (ret && *ret == 0)
+      times.update(&key, &now);
     else
-    {
-      // Update the flow otherwise
-      __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
-      ++accms.packets;
-      accms.bytes += bytes;
+      times.update(&key2, &now);
 
-      // First flow gets start attribute set
-      if (flow_ptr -> start == 0)
-      {
-        accms.start = now;
-      }
-
-      // Start time for front end
-      u64 *ret = start_time.lookup(&key);
-      if (ret && *ret == 0)
-        start_time.update(&key, &now);
-
-      // All flows constantly update their end attribute until aggregation
-      accms.end = now;
-
-      flows.update(&p, &accms); 
-    }
+    flows.update(&p, &accms); 
   }
   else
   {
