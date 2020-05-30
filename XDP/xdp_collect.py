@@ -22,6 +22,7 @@ import os, sys, time
 from socket import inet_ntoa, ntohl, ntohs
 import ipaddress
 from random import randint
+from math import floor
 
 # Global Variables #
 
@@ -98,6 +99,7 @@ def main(args):
     flows = bpf.get_table("flows")
     cache = bpf.get_table("cache")
     while abs(time.time() - py_start) < run_time:
+        logger.debug("*** COLLECTING FOR %ss ***" % floor(run_time - (time.time() - py_start)))
         xdp_start = time_wizard[0].value
         cur_flows = flows.items()
         cur_flows_len = len(cur_flows)
@@ -111,8 +113,7 @@ def main(args):
 
             # Loop through all CPUs and find most recent timestamp
             for j in range(0, CPU_COUNT):
-                if (accms[j].end != 0):
-                    recent_stamp = accms[j].end if accms[j].end > recent_stamp else recent_stamp
+                recent_stamp = accms[j].end if accms[j].end > recent_stamp else recent_stamp
 
             # Cache flow if exceeding aggregation time
             idle_time = (time_wizard[1].value - recent_stamp) / 1e9
