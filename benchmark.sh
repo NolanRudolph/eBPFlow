@@ -35,7 +35,7 @@ for cpu in $(seq $CPUS $NCPUS); do
 done
 
 # Main program
-sudo ./XDP/xdp_collect.py -i $IF -dt $TIME -a $AGG
+sudo ./XDP/xdp_collect.py -i $IF -t $TIME -a $AGG
 
 for cpu in $(seq 1 $NCPUS); do
   echo 1 | sudo tee /sys/devices/system/cpu/cpu$cpu/online &> /dev/null

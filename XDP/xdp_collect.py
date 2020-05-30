@@ -93,6 +93,7 @@ def main(args):
     # 'py_start' holds epoch time of something else, but only matters for while loop
     time_wizard = bpf.get_table("times")
     py_start = time.time()
+    xdp_start = 0
 
     # Main flow collecting segment (Garbage Collector)
     logger.info("*** COLLECTING FOR %ss ***" % run_time)
@@ -157,6 +158,7 @@ def main(args):
             end = 0
             for j in range(0, CPU_COUNT):
                 accms = all_flows[i][val][j]
+                print("CPU {}: {}".format(j, accms.packets))
                 n_packets += accms.packets
                 n_bytes += accms.bytes
                 if accms.start != 0:
