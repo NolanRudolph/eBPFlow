@@ -25,21 +25,45 @@ from random import randint
 from math import floor
 
 # Global Variables #
-
-MAX_BUFFER = 2048
-ETH_IP = 14
-ETH_VLAN = 4
-TCP = 20
-UDP = 8
 CPU_COUNT = os.cpu_count()
 key = 0
 val = 1
-u32 = 2**32
-cached_flows = []
+
+def _sweep_flows(flows, cache, offset, agg_time):
+    logging.info("sweep flows")
+    now = time.time()
+    cur_flows = flows.items()
+    cur_flows_len = len(cur_flows)
+    old_flows = []
+
+    # Loop through all recording flows
+    for i in range(0, cur_flows_len):
+        attrs = cur_flows[i][key]
+        accms = cur_flows[i][val]  # accms[j] means "accumlators on cpu j"
+
+        recent_stamp = 0
+        # Loop through all CPUs and find most recent timestamp
+        for j in range(0, CPU_COUNT):
+            recent_stamp = accms[j].end if accms[j].end > recent_stamp else recent_stamp
+
+        # Cache flow if exceeding aggregation time
+        idle_time = now - (recent_stamp/1e9 + offset)
+        if idle_time > agg_time:
+            old_flows.append(attrs)
+        
+    # Final loop to cleanup "flows" hashmap and populate "cache"
+    for flow in old_flows:
+        cache.__setitem__(flow, flows.__getitem__(flow))
+        flows.__delitem__(flow)
+    logging.info(f"{len(old_flows)} swept")
 
 
 # Main #
 def main(args):
+    with open('/proc/uptime') as inf:
+        uptime = float(inf.read().split()[0])
+    offset = time.time() - uptime
+
     # User argument handling
     loglevel = logging.INFO
     run_time = 5
@@ -54,9 +78,8 @@ def main(args):
     if args.aggregate:
         agg_time = args.aggregate
 
-    assert agg_time < run_time, "-a argument must be less than -t"
-    agg_time_s = agg_time
-    agg_time *= 1e9
+    # assert agg_time < run_time, "-a argument must be less than -t"
+    # JS: should be ok for aggregation time >= Run time
 
     # Logger stuff
     logging.basicConfig(level=loglevel, 
@@ -69,7 +92,6 @@ def main(args):
 
     # CFlags for eBPF compile
     _cflags = []
-    _cflags.append("-DAGG=" + str(agg_time))
 
     # Compile and load the required source C file
     logger.debug("Loading xdp_collect.c...")
@@ -91,40 +113,22 @@ def main(args):
 
     # 'time_wizard' holds epoch time of first flow from XDP
     # 'py_start' holds epoch time of something else, but only matters for while loop
-    time_wizard = bpf.get_table("times")
     py_start = time.time()
-    xdp_start = 0
 
     # Main flow collecting segment (Garbage Collector)
     logger.info("*** COLLECTING FOR %ss ***" % run_time)
     flows = bpf.get_table("flows")
     cache = bpf.get_table("cache")
-    while abs(time.time() - py_start) < run_time:
-        logger.debug("*** COLLECTING FOR %ss ***" % floor(run_time - (time.time() - py_start)))
-        xdp_start = time_wizard[0].value
-        cur_flows = flows.items()
-        cur_flows_len = len(cur_flows)
-        old_flows = []
 
-        # Loop through all recording flows
-        for i in range(0, cur_flows_len):
-            attrs = cur_flows[i][key]
-            accms = cur_flows[i][val]  # accms[j] means "accumlators on cpu j"
-            recent_stamp = 0
+    try:
+        while abs(time.time() - py_start) < run_time:
+            logger.debug("*** COLLECTING FOR %ss ***" % floor(run_time - (time.time() - py_start)))
+            time.sleep(agg_time)
+            _sweep_flows(flows, cache, offset, agg_time)
+    except KeyboardInterrupt:
+        logger.info("Caught ctrl+c; finishing")
 
-            # Loop through all CPUs and find most recent timestamp
-            for j in range(0, CPU_COUNT):
-                recent_stamp = accms[j].end if accms[j].end > recent_stamp else recent_stamp
-
-            # Cache flow if exceeding aggregation time
-            idle_time = (time_wizard[1].value - recent_stamp) / 1e9
-            if idle_time > agg_time_s:
-                old_flows.append(attrs)
-        
-        # Final loop to cleanup "flows" hashmap and populate "cache"
-        for flow in old_flows:
-            cache.__setitem__(flow, flows.__getitem__(flow))
-            flows.__delitem__(flow)
+    _sweep_flows(flows, cache, offset, 0) # force sweeping all remaining flows
 
     # Transfer remaining flows to cache
     logger.info("Caching ongoing flows")
@@ -154,17 +158,21 @@ def main(args):
             # Get accumulation variables over all CPUs
             n_packets = 0
             n_bytes = 0
-            start = 0
-            end = 0
+            start = -1
+            end = -1
             for j in range(0, CPU_COUNT):
                 accms = all_flows[i][val][j]
                 print("CPU {}: {}".format(j, accms.packets))
                 n_packets += accms.packets
                 n_bytes += accms.bytes
-                if accms.start != 0:
-                    start = (accms.start - xdp_start) / 1e9
-                if accms.end != 0:
-                    end = (accms.end - xdp_start) / 1e9
+                if start == -1:
+                    start = accms.start
+                    end = accms.end
+                else:
+                    start = min(start, accms.start)
+                    end = max(end, accms.end)
+            start = start/1e9 + offset # convert to unix time
+            end = end/1e9 + offset  # convert to unix time
 
             l2_proto = attrs.l2_proto
             l4_proto = attrs.l4_proto
