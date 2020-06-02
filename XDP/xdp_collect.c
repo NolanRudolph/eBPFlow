@@ -45,7 +45,6 @@ typedef struct flow_accms
 } flow_accms;
 
 /* BPF MAPS */
-BPF_ARRAY(times, u64, 2); // Index 1: Start time | Index 2: Latest time
 BPF_TABLE("percpu_hash", struct flow_attrs, struct flow_accms, cache, 65536);
 BPF_TABLE("percpu_hash", struct flow_attrs, struct flow_accms, flows, 65536);
 BPF_PROG_ARRAY(parse_layer3, 7);
@@ -68,19 +67,17 @@ int xdp_parser(struct xdp_md *ctx)
 
   // Extract Little Endian Ethertype
   __be16 ether_be = ether -> h_proto;
-  uint16_t ether_le = ntohs(ether_be);
-
   // IPv4 Packet Handling
   if (ether_be == htons(ETH_P_IP))
   {
     parse_layer3.call(ctx, 4);
-    return XDP_PASS;
+    return XDP_DROP;
   }
   // IPv6 Packet Handling
   else if (ether_be == htons(ETH_P_IPV6))
   {
     parse_layer3.call(ctx, 6);
-    return XDP_PASS;
+    return XDP_DROP;
   }
   // VLAN Packet Handling
   else if (ether_be == htons(ETH_P_8021Q) || ether_be == htons(ETH_P_8021AD))
@@ -110,8 +107,10 @@ int parse_ipv4(struct xdp_md *ctx)
   void *data_end = (void *)(long)(ctx -> data_end);
 
   // Make sure the data is accessible (see note 2 above)
-  if (data + offset + sizeof(struct iphdr) > data_end)
+  if (data + offset + sizeof(struct iphdr) > data_end) 
+  {
     return XDP_DROP;
+  }
 
   // Fix IP Header pointer to correct location
   struct iphdr *iph = (struct iphdr *)(data + offset);
@@ -124,7 +123,6 @@ int parse_ipv4(struct xdp_md *ctx)
   p.l2_proto = ETH_P_IP;
   __builtin_memcpy(&p.src_ip, &(iph -> saddr), sizeof(__be32));
   __builtin_memcpy(&p.dst_ip, &(iph -> daddr), sizeof(__be32));
-  // __builtin_memcpy(&bytes, &(iph -> tot_len), sizeof(uint16_t));
 
   // Get L4 protocol
   u_short proto = iph -> protocol;
@@ -165,40 +163,21 @@ int parse_ipv4(struct xdp_md *ctx)
   }
 
   u64 now = bpf_ktime_get_ns();
-  flow_accms accms = {0, 0, 0, 0};
+  flow_accms accms = {now, 0, 0, 0};
   flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &accms);
-  int key = 0;
-  int key2 = 1;
 
   if (flow_ptr)
   {
     // Update / insert the flow
-    __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
-    ++accms.packets;
-    accms.bytes += bytes;
-
-    // First flow gets start attribute set
-    if (flow_ptr -> start == 0)
-    {
-      accms.start = now + 1;
-    }
-    // All flows constantly update their end attribute until aggregation
-    accms.end = now + 1;
-
-    // Start time for front end
-    u64 *ret = times.lookup(&key);
-    if (ret && *ret == 0)
-      times.update(&key, &now);
-    else
-      times.update(&key2, &now);
-
-    flows.update(&p, &accms); 
+    flow_ptr->packets += 1;
+    flow_ptr->bytes += bytes;
+    flow_ptr->end = now + 1;
   }
   else
   {
     return XDP_DROP;
   }
-  return XDP_PASS;
+  return XDP_DROP; // should eventually be parameterizable to either drop or pass
 }
 
 // (IPv6 i.e. parse_layer3.call(ctx, 6)) Passed context via program array
@@ -216,14 +195,16 @@ int parse_ipv6(struct xdp_md *ctx)
 
   // Make sure the data is accessible (see note 2 above)
   if (data + offset + sizeof(struct ipv6hdr) > data_end)
+  {
     return XDP_DROP;
+  }
 
   // Fix IP Header pointer to correct location
   struct ipv6hdr *ip6h = (struct ipv6hdr *)(data + offset);
   offset += sizeof(struct ipv6hdr);
 
   // # of bytes for accumulator variables
-  uint16_t bytes = 0;
+  uint16_t bytes = (ctx -> data_end) - (ctx -> data);
 
   // Store L2 + L3 Protocol, src_ip, and dst_ip
   p.l2_proto = ETH_P_IPV6;
@@ -270,38 +251,19 @@ int parse_ipv6(struct xdp_md *ctx)
   }
 
   u64 now = bpf_ktime_get_ns();
-  flow_accms accms = {0, 0, 0, 0};
+  flow_accms accms = {now, 0, 0, 0};
   flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &accms);
-  int key = 0;
-  int key2 = 1;
 
   if (flow_ptr)
   {
     // Update the flow otherwise
-    __builtin_memcpy(&accms, flow_ptr, sizeof(struct flow_accms));
-    ++accms.packets;
-    accms.bytes += bytes;
-
-    // First flow gets start attribute set
-    if (flow_ptr -> start == 0)
-    {
-      accms.start = now + 1;
-    }
-    // All flows constantly update their end attribute until aggregation
-    accms.end = now + 1;
-
-    // Start time for front end
-    u64 *ret = times.lookup(&key);
-    if (ret && *ret == 0)
-      times.update(&key, &now);
-    else
-      times.update(&key2, &now);
-
-    flows.update(&p, &accms); 
+    flow_ptr->packets += 1;
+    flow_ptr->bytes += bytes;
+    flow_ptr->end = now + 1;
   }
   else
   {
     return XDP_DROP;
   }
-  return XDP_PASS;
+  return XDP_DROP; // should eventually be parameterizable to either drop or pass
 }
