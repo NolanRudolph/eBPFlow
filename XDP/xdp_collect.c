@@ -45,8 +45,8 @@ typedef struct flow_accms
 } flow_accms;
 
 /* BPF MAPS */
-BPF_TABLE("percpu_hash", struct flow_attrs, struct flow_accms, cache, 65536);
-BPF_TABLE("percpu_hash", struct flow_attrs, struct flow_accms, flows, 65536);
+BPF_TABLE("percpu_hash", struct flow_attrs, struct flow_accms, flows0, MAPSIZE);
+BPF_TABLE("percpu_hash", struct flow_attrs, struct flow_accms, flows1, MAPSIZE);
 BPF_PROG_ARRAY(parse_layer3, 7);
 
 /* CODE */
@@ -93,8 +93,14 @@ int xdp_parser(struct xdp_md *ctx)
   return XDP_DROP;
 }
 
+// don't do anything; just let packets pass
+int null_parser(struct xdp_md *ctx) 
+{
+    return XDP_PASS;
+}
+
 // (IPv4 i.e. parse_layer3.call(ctx, 4)) Passed context via program array
-int parse_ipv4(struct xdp_md *ctx) 
+int parse_ipv4_flows0(struct xdp_md *ctx) 
 {
   // Packet to store in hash
   flow_attrs p = {0, 0, 0, 0, 0, 0};
@@ -159,12 +165,12 @@ int parse_ipv4(struct xdp_md *ctx)
   }
   else
   {
-    return XDP_DROP;
+    return XDPACTION;
   }
 
   u64 now = bpf_ktime_get_ns();
   flow_accms accms = {now, 0, 0, 0};
-  flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &accms);
+  flow_accms *flow_ptr = flows0.lookup_or_try_init(&p, &accms);
 
   if (flow_ptr)
   {
@@ -175,13 +181,104 @@ int parse_ipv4(struct xdp_md *ctx)
   }
   else
   {
+    // FIXME: should maybe do a perf push to userspace to indicate
+    // that map is likely full and should swap
+    return XDPACTION;
+  }
+  return XDPACTION; 
+}
+
+// (IPv4 i.e. parse_layer3.call(ctx, 4)) Passed context via program array
+int parse_ipv4_flows1(struct xdp_md *ctx) 
+{
+  // Packet to store in hash
+  flow_attrs p = {0, 0, 0, 0, 0, 0};
+
+  // Offset for memory boundary checks
+  int offset = sizeof(struct ethhdr);
+
+  // Retrieve data from context
+  void *data = (void *)(long)(ctx -> data);
+  void *data_end = (void *)(long)(ctx -> data_end);
+
+  // Make sure the data is accessible (see note 2 above)
+  if (data + offset + sizeof(struct iphdr) > data_end) 
+  {
     return XDP_DROP;
   }
-  return XDP_DROP; // should eventually be parameterizable to either drop or pass
+
+  // Fix IP Header pointer to correct location
+  struct iphdr *iph = (struct iphdr *)(data + offset);
+  offset += sizeof(struct iphdr);
+
+  // # of bytes for accumulator variables
+  uint16_t bytes = (ctx -> data_end) - (ctx -> data);
+
+  // Store L2 + L3 Protocol, src_ip, dst_ip, and #bytes
+  p.l2_proto = ETH_P_IP;
+  __builtin_memcpy(&p.src_ip, &(iph -> saddr), sizeof(__be32));
+  __builtin_memcpy(&p.dst_ip, &(iph -> daddr), sizeof(__be32));
+
+  // Get L4 protocol
+  u_short proto = iph -> protocol;
+
+  // Put layer 4 attributes in flow_attrs
+  if (proto == ICMP && (data + offset + sizeof(struct icmphdr) < data_end))
+  {
+    struct icmphdr *icmph = (struct icmphdr *)(data + offset);
+
+    // Store L4 Protocol, src_port (type), and dst_port (code)
+    p.l4_proto = ICMP;
+    
+    __builtin_memcpy(&p.src_port, &(icmph -> type), sizeof(uint8_t));
+    __builtin_memcpy(&p.dst_port, &(icmph -> code), sizeof(uint8_t));
+  }
+  else if (proto == TCP && (data + offset + sizeof(struct tcphdr) < data_end))
+  {
+    struct tcphdr *tcph = (struct tcphdr *)(data + offset);
+
+    // Store L4 Protocol, src_port, and dst_port
+    p.l4_proto = TCP;
+
+    __builtin_memcpy(&p.src_port, &(tcph -> source), sizeof(__be16));
+    __builtin_memcpy(&p.dst_port, &(tcph -> dest), sizeof(__be16));
+  }
+  else if (proto == UDP && (data + offset + sizeof(struct udphdr) < data_end))
+  {
+    struct udphdr *udph = (struct udphdr *)(data + offset);
+
+    // Store L4 Protocol, src_port, and dst_port
+    p.l4_proto = UDP;
+    __builtin_memcpy(&p.src_port, &(udph -> source), sizeof(__be16));
+    __builtin_memcpy(&p.dst_port, &(udph -> dest), sizeof(__be16));
+  }
+  else
+  {
+    return XDPACTION;
+  }
+
+  u64 now = bpf_ktime_get_ns();
+  flow_accms accms = {now, 0, 0, 0};
+  flow_accms *flow_ptr = flows1.lookup_or_try_init(&p, &accms);
+
+  if (flow_ptr)
+  {
+    // Update / insert the flow
+    flow_ptr->packets += 1;
+    flow_ptr->bytes += bytes;
+    flow_ptr->end = now + 1;
+  }
+  else
+  {
+    // FIXME: should maybe do a perf push to userspace to indicate
+    // that map is likely full and should swap
+    return XDPACTION;
+  }
+  return XDPACTION; 
 }
 
 // (IPv6 i.e. parse_layer3.call(ctx, 6)) Passed context via program array
-int parse_ipv6(struct xdp_md *ctx)
+int parse_ipv6_flows0(struct xdp_md *ctx)
 {
   // Packet to store in hash
   flow_attrs p = {0, 0, 0, 0, 0, 0};
@@ -247,12 +344,12 @@ int parse_ipv6(struct xdp_md *ctx)
   }
   else
   {
-    return XDP_DROP;
+    return XDPACTION;
   }
 
   u64 now = bpf_ktime_get_ns();
   flow_accms accms = {now, 0, 0, 0};
-  flow_accms *flow_ptr = flows.lookup_or_try_init(&p, &accms);
+  flow_accms *flow_ptr = flows0.lookup_or_try_init(&p, &accms);
 
   if (flow_ptr)
   {
@@ -263,7 +360,99 @@ int parse_ipv6(struct xdp_md *ctx)
   }
   else
   {
+    // FIXME: should maybe do a perf push to userspace to indicate
+    // that map is likely full and should swap
+    return XDPACTION;
+  }
+  return XDPACTION; 
+}
+
+// (IPv6 i.e. parse_layer3.call(ctx, 6)) Passed context via program array
+int parse_ipv6_flows1(struct xdp_md *ctx)
+{
+  // Packet to store in hash
+  flow_attrs p = {0, 0, 0, 0, 0, 0};
+
+  // Offset for memory boundary checks
+  int offset = sizeof(struct ethhdr);
+
+  // Retrieve data from context
+  void *data = (void *)(long)(ctx -> data);
+  void *data_end = (void *)(long)(ctx -> data_end);
+
+  // Make sure the data is accessible (see note 2 above)
+  if (data + offset + sizeof(struct ipv6hdr) > data_end)
+  {
     return XDP_DROP;
   }
-  return XDP_DROP; // should eventually be parameterizable to either drop or pass
+
+  // Fix IP Header pointer to correct location
+  struct ipv6hdr *ip6h = (struct ipv6hdr *)(data + offset);
+  offset += sizeof(struct ipv6hdr);
+
+  // # of bytes for accumulator variables
+  uint16_t bytes = (ctx -> data_end) - (ctx -> data);
+
+  // Store L2 + L3 Protocol, src_ip, and dst_ip
+  p.l2_proto = ETH_P_IPV6;
+  __builtin_memcpy(&p.src_ip, &(ip6h -> saddr), sizeof(__be32));
+  __builtin_memcpy(&p.dst_ip, &(ip6h -> daddr), sizeof(__be32));
+
+  // Get L4 Protocol
+  u_short proto = ip6h -> nexthdr;
+
+  // Put layer 4 attributes in flow_attrs
+  if (proto == ICMP && (data + offset + sizeof(struct icmphdr) < data_end))
+  {
+    struct icmphdr *icmph = (struct icmphdr *)(data + offset);
+
+    // Store L4 Protocol, src_port (type), and dst_port (code)
+    p.l4_proto = ICMP;
+
+    __builtin_memcpy(&p.src_port, &(icmph -> type), sizeof(uint8_t));
+    __builtin_memcpy(&p.dst_port, &(icmph -> code), sizeof(uint8_t));
+  }
+  else if (proto == TCP && (data + offset + sizeof(struct tcphdr) < data_end))
+  {
+    struct tcphdr *tcph = (struct tcphdr *)(data + offset);
+
+    // Store L4 Protocol, src_port, and dst_port
+    p.l4_proto = TCP;
+
+    __builtin_memcpy(&p.src_port, &(tcph -> source), sizeof(__be16));
+    __builtin_memcpy(&p.dst_port, &(tcph -> dest), sizeof(__be16));
+  }
+  else if (proto == UDP && (data + offset + sizeof(struct udphdr) < data_end))
+  {
+    struct udphdr *udph = (struct udphdr *)(data + offset);
+
+    // Store L4 Protocol, src_port, and dst_port
+    p.l4_proto = UDP;
+
+    __builtin_memcpy(&p.src_port, &(udph -> source), sizeof(__be16));
+    __builtin_memcpy(&p.dst_port, &(udph -> dest), sizeof(__be16));
+  }
+  else
+  {
+    return XDPACTION;
+  }
+
+  u64 now = bpf_ktime_get_ns();
+  flow_accms accms = {now, 0, 0, 0};
+  flow_accms *flow_ptr = flows1.lookup_or_try_init(&p, &accms);
+
+  if (flow_ptr)
+  {
+    // Update the flow otherwise
+    flow_ptr->packets += 1;
+    flow_ptr->bytes += bytes;
+    flow_ptr->end = now + 1;
+  }
+  else
+  {
+    // FIXME: should maybe do a perf push to userspace to indicate
+    // that map is likely full and should swap
+    return XDPACTION;
+  }
+  return XDPACTION; 
 }
