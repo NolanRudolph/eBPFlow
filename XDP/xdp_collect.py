@@ -13,22 +13,20 @@
 #       h. tun
 #       i. virtio_net
 
-# Imports #
 import bcc
 from bcc import BPF
-import ctypes, struct
+import ctypes
 import argparse, logging
 import os, sys, time
 from socket import inet_ntoa, ntohl, ntohs
 import ipaddress
-from random import randint
 from math import floor
 from collections import Counter
 
 # Global Variables #
 CPU_COUNT = os.cpu_count()
 
-def _sweep_flows(flows, offset, agg_time, out_file):
+def _sweep_flows(flows, offset, out_file):
     pktcounts = Counter()
     logging.info("sweep flows")
     now = time.time()
@@ -86,7 +84,6 @@ def main(args):
     # User argument handling
     loglevel = logging.INFO
     run_time = 3600
-    agg_time = 60
     out_file = "flows.csv"
     if args.debug:
         loglevel = logging.DEBUG
@@ -94,11 +91,6 @@ def main(args):
         run_time = args.runtime
     if args.output:
         out_file = args.output
-    if args.aggregate:
-        agg_time = args.aggregate
-
-    # assert agg_time < run_time, "-a argument must be less than -t"
-    # JS: should be ok for aggregation time >= Run time
 
     # Logger stuff
     logging.basicConfig(level=loglevel, 
@@ -158,7 +150,7 @@ def main(args):
             next_buffer = (curr_buffer + 1) % 2
             logging.info(f"Swapping to buffer {next_buffer}")
             _set_flow_buffer(prog_array, flow_store_fun, next_buffer)
-            counts = _sweep_flows(flowtables[curr_buffer], offset, agg_time, out_file)
+            counts = _sweep_flows(flowtables[curr_buffer], offset, out_file)
             allcounts += counts
             curr_buffer = next_buffer
     except KeyboardInterrupt:
@@ -211,8 +203,6 @@ if __name__ == "__main__":
                         help="Amount of time between flow buffer/map swaps")
     parser.add_argument("-t", "--runtime", default=3600, required=False, type=int, 
                         help="Time to run (s) [default = run until ctrl+c]")
-    parser.add_argument("-a", "--aggregate", default=60, required=False, type=int,
-                        help="Aggregation time (s) to close flows [default = 60]")
     parser.add_argument("-o", "--output", default="flows.csv", required=False, type=str,
                         help="Name of file to output flows in CSV format")
     parser.add_argument("-d", "--debug", default=False, required=False, action="store_true",
