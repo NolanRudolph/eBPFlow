@@ -37,19 +37,18 @@ def _sweep_flows(flows, offset, agg_time, out_file):
             # accumulate flow counters over all CPUs
             n_packets = 0
             n_bytes = 0
-            start = -1
-            end = -1
+            start = 0
+            end = 0
             for j in range(0, CPU_COUNT):
                 flowaccum = accum[j]
                 pktcounts[f"CPU{j}"] += flowaccum.packets
                 n_packets += flowaccum.packets
                 n_bytes += flowaccum.bytes
-                if start == -1:
+                if start == 0:
                     start = flowaccum.start
-                    end = flowaccum.end
-                else:
+                elif flowaccum.start > 0:
                     start = min(start, flowaccum.start)
-                    end = max(end, flowaccum.end)
+                end = max(end, flowaccum.end)
             start = start/1e9 + offset # convert to unix time
             end = end/1e9 + offset  # convert to unix time
 
@@ -104,11 +103,10 @@ def main(args):
     # Logger stuff
     logging.basicConfig(level=loglevel, 
                         format="[%(levelname)s] %(name)s : %(message)s")
-    logger = logging.getLogger(__name__)
 
     # Retrieve user arguments
     IF = args.interface
-    logger.info("Using interface %s" % IF)
+    logging.info("Using interface %s" % IF)
 
     # CFlags for eBPF compile
     _cflags = ["-DMAPSIZE={}".format(args.mapsize)]
@@ -118,17 +116,17 @@ def main(args):
         _cflags.append('-DXDPACTION=XDP_PASS')
 
     # Compile and load the required source C file
-    logger.debug("Loading xdp_collect.c...")
+    logging.debug("Loading xdp_collect.c...")
     bpf = BPF(src_file="xdp_collect.c", \
               cflags=_cflags, \
               debug=bcc.DEBUG_SOURCE | bcc.DEBUG_BPF)
 
     # Get the main function
-    logger.debug("Loading function xdp_parser()...")
+    logging.debug("Loading function xdp_parser()...")
     fn = bpf.load_func("xdp_parser", BPF.XDP)
 
     # Attach the flow collector
-    logger.debug("Attaching xdp_parser() to kernel hook...")
+    logging.debug("Attaching xdp_parser() to kernel hook...")
     bpf.attach_xdp(IF, fn, 0)
 
     flow_store_fun = {}
@@ -149,35 +147,35 @@ def main(args):
     py_start = time.time()
 
     # Main flow collecting segment (Garbage Collector)
-    logger.info("*** COLLECTING FOR %ss ***" % run_time)
+    logging.info("*** COLLECTING FOR %ss ***" % run_time)
 
     curr_buffer = 0
     allcounts = Counter()
     try:
         while abs(time.time() - py_start) < run_time:
-            logger.debug("*** COLLECTING FOR %ss ***" % floor(run_time - (time.time() - py_start)))
+            logging.debug("*** COLLECTING FOR %ss ***" % floor(run_time - (time.time() - py_start)))
             time.sleep(args.swap)
             next_buffer = (curr_buffer + 1) % 2
-            logger.info(f"Swapping to buffer {next_buffer}")
+            logging.info(f"Swapping to buffer {next_buffer}")
             _set_flow_buffer(prog_array, flow_store_fun, next_buffer)
             counts = _sweep_flows(flowtables[curr_buffer], offset, agg_time, out_file)
             allcounts += counts
             curr_buffer = next_buffer
     except KeyboardInterrupt:
-        logger.info("Caught ctrl+c; finishing")
+        logging.info("Caught ctrl+c; finishing")
 
     # set jump table so that flow capture stops
-    logger.info("Stopping flow collection.")
+    logging.info("Stopping flow collection.")
     for af in [4,6]:
         prog_array[ctypes.c_int(af)] = ctypes.c_int(null_handler.fd)
 
     # clear out any flows
-    logger.info("Clearing any remaining flows.")
+    logging.info("Clearing any remaining flows.")
     for i in range(2):
         _sweep_flows(flowtables[i], offset, 0, out_file)
 
     bpf.remove_xdp(IF, 0)
-    logger.info("Removed XDP Program from Kernel.")
+    logging.info("Removed XDP Program from Kernel.")
 
     with open(out_file, "a") as outfile:
         allcount = sum(allcounts.values())
@@ -185,7 +183,7 @@ def main(args):
         print(allcount, cts)
         print("#", allcount, cts, file=outfile)
 
-    logger.info("Finished!")
+    logging.info("Finished!")
 
 
 def _set_flow_buffer(prog_array, fnmap, idx):
