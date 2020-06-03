@@ -24,8 +24,6 @@
 #define UDP 17
 
 /* TYPEDEFS */
-typedef unsigned char u_char;
-
 typedef struct flow_attrs
 {
   uint16_t l2_proto;
@@ -67,17 +65,16 @@ int xdp_parser(struct xdp_md *ctx)
 
   // Extract Little Endian Ethertype
   __be16 ether_be = ether -> h_proto;
+
   // IPv4 Packet Handling
   if (ether_be == htons(ETH_P_IP))
   {
     parse_layer3.call(ctx, 4);
-    return XDP_DROP;
   }
   // IPv6 Packet Handling
   else if (ether_be == htons(ETH_P_IPV6))
   {
     parse_layer3.call(ctx, 6);
-    return XDP_DROP;
   }
   // VLAN Packet Handling
   else if (ether_be == htons(ETH_P_8021Q) || ether_be == htons(ETH_P_8021AD))
@@ -134,7 +131,6 @@ int parse_ipv4(struct xdp_md *ctx)
 
     // Store L4 Protocol, src_port (type), and dst_port (code)
     p.l4_proto = ICMP;
-    
     __builtin_memcpy(&p.src_port, &(icmph -> type), sizeof(uint8_t));
     __builtin_memcpy(&p.dst_port, &(icmph -> code), sizeof(uint8_t));
   }
@@ -144,7 +140,6 @@ int parse_ipv4(struct xdp_md *ctx)
 
     // Store L4 Protocol, src_port, and dst_port
     p.l4_proto = TCP;
-
     __builtin_memcpy(&p.src_port, &(tcph -> source), sizeof(__be16));
     __builtin_memcpy(&p.dst_port, &(tcph -> dest), sizeof(__be16));
   }
@@ -173,10 +168,7 @@ int parse_ipv4(struct xdp_md *ctx)
     flow_ptr->bytes += bytes;
     flow_ptr->end = now + 1;
   }
-  else
-  {
-    return XDP_DROP;
-  }
+
   return XDP_DROP; // should eventually be parameterizable to either drop or pass
 }
 

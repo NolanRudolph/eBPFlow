@@ -30,7 +30,7 @@ key = 0
 val = 1
 
 def _sweep_flows(flows, cache, offset, agg_time):
-    logging.info("sweep flows")
+    logging.info("Sweeping flows...")
     now = time.time()
     cur_flows = flows.items()
     cur_flows_len = len(cur_flows)
@@ -55,7 +55,7 @@ def _sweep_flows(flows, cache, offset, agg_time):
     for flow in old_flows:
         cache.__setitem__(flow, flows.__getitem__(flow))
         flows.__delitem__(flow)
-    logging.info(f"{len(old_flows)} swept")
+    logging.info(f"{len(old_flows)} flows swept")
 
 
 # Main #
@@ -77,9 +77,6 @@ def main(args):
         out_file = args.output
     if args.aggregate:
         agg_time = args.aggregate
-
-    # assert agg_time < run_time, "-a argument must be less than -t"
-    # JS: should be ok for aggregation time >= Run time
 
     # Logger stuff
     logging.basicConfig(level=loglevel, 
@@ -111,8 +108,7 @@ def main(args):
     for i, fn in [(4, "parse_ipv4"), (6, "parse_ipv6")]:
         _set_bpf_jumptable(bpf, "parse_layer3", i, fn, BPF.XDP)
 
-    # 'time_wizard' holds epoch time of first flow from XDP
-    # 'py_start' holds epoch time of something else, but only matters for while loop
+    # 'py_start' holds epoch time since kernel startup, but only matters for while loop
     py_start = time.time()
 
     # Main flow collecting segment (Garbage Collector)
@@ -127,8 +123,10 @@ def main(args):
             _sweep_flows(flows, cache, offset, agg_time)
     except KeyboardInterrupt:
         logger.info("Caught ctrl+c; finishing")
-
-    _sweep_flows(flows, cache, offset, 0) # force sweeping all remaining flows
+        bpf.remove_xdp(IF, 0)
+        
+    # force sweeping all remaining flows
+    _sweep_flows(flows, cache, offset, 0) 
 
     # Transfer remaining flows to cache
     logger.info("Caching ongoing flows")

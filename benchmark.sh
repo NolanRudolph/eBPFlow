@@ -30,16 +30,16 @@ fi
 
 set -x
 
-for cpu in $(seq $CPUS $NCPUS); do
-  echo 0 | sudo tee /sys/devices/system/cpu/cpu$cpu/online &> /dev/null
-done
+#for cpu in $(seq $CPUS $NCPUS); do
+#  echo 0 | sudo tee /sys/devices/system/cpu/cpu$cpu/online &> /dev/null
+#done
 
 # Main program
 sudo ./XDP/xdp_collect.py -i $IF -t $TIME -a $AGG
 
-for cpu in $(seq 1 $NCPUS); do
-  echo 1 | sudo tee /sys/devices/system/cpu/cpu$cpu/online &> /dev/null
-done
+#for cpu in $(seq 1 $NCPUS); do
+#  echo 1 | sudo tee /sys/devices/system/cpu/cpu$cpu/online &> /dev/null
+#done
 
 set +x
 
